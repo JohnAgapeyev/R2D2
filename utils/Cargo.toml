@@ -1,0 +1,18 @@
+[package]
+name = "r2d2_utils"
+version = "0.1.0"
+edition = "2021"
+autotests = false
+publish = false
+
+[dependencies]
+zeroize = ">=1.4"
+rand = { version = ">=0.8", features = ["getrandom", "std"]}
+digest = { version = ">=0.9", features = ["std"]}
+generic-array = ">=0.14"
+typenum = ">=1.14"
+aead = { version = ">=0.4", features = ["alloc"]}
+aes-gcm = { version = ">=0.9", features = ["alloc"]}
+aes-gcm-siv = { version = ">=0.10", features = ["alloc"]}
+chacha20poly1305 = { version = ">=0.9", features = ["alloc"]}
+hkdf = ">=0.11"

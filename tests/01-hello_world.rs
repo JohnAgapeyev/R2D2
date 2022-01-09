@@ -1,5 +1,5 @@
 use r2d2::*;
-//use r2d2::rand::RngCore;
+use r2d2::rand::*;
 
 #[obfuscate]
 fn main() {
@@ -15,4 +15,6 @@ fn main() {
         "foobar"
     };
     println!("{}", x);
+
+    println!("Real reference random number {}", r2d2::rand::rngs::OsRng.next_u32());
 }
