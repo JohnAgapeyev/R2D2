@@ -162,13 +162,10 @@ impl ToTokens for FormatArgs {
 struct StrReplace;
 
 impl VisitMut for StrReplace {
-    fn visit_lit_str_mut(&mut self, node: &mut LitStr) {
-        *node = LitStr::new("Fucking hell", node.span());
-        visit_mut::visit_lit_str_mut(self, node);
-    }
     fn visit_macro_mut(&mut self, node: &mut Macro) {
         match node.parse_body::<FormatArgs>() {
             Ok(mut what) => {
+                //TODO: Do we need to restrict this to "println!" and "format!" macros?
                 if what.positional_args.is_empty() && what.named_args.is_empty() {
                     //Change the string literal to ("{}", "str") to allow block expression replacement
                     let span = what.format_string.span();
@@ -198,7 +195,9 @@ impl VisitMut for StrReplace {
                 //eprintln!("WOW {:#?}", s);
                 let test = quote! {
                     {
-                        println!("Wow an extra message");
+                        use rand::rngs::OsRng;
+                        use rand::RngCore;
+                        println!("Wow a random number {}", rand::rngs::OsRng.next_u32());
                         #s
                     }
                 };
@@ -232,6 +231,7 @@ impl VisitMut for StrReplace {
 
 #[proc_macro_attribute]
 pub fn obfuscate(args: TokenStream, input: TokenStream) -> TokenStream {
+    //TODO: Remove the TokenStream clone when things are stabilized
     //eprintln!("INPUT: {:#?}", input);
     let input2 = input.clone();
     let _ = parse_macro_input!(args as AttributeArgs);

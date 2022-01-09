@@ -1,4 +1,5 @@
 use r2d2::*;
+//use r2d2::rand::RngCore;
 
 #[obfuscate]
 fn main() {
