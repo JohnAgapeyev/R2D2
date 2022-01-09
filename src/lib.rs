@@ -2,19 +2,20 @@
 #![allow(unused_imports)]
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenTree;
-use proc_macro2::Span;
 use proc_macro2::Literal;
 use proc_macro2::Punct;
 use proc_macro2::Spacing;
+use proc_macro2::Span;
+use proc_macro2::TokenTree;
 use quote::quote;
 use quote::ToTokens;
 use quote::TokenStreamExt;
-use syn::*;
+use syn::ext::*;
 use syn::fold::*;
 use syn::parse::*;
+use syn::spanned::Spanned;
 use syn::visit_mut::*;
-use syn::ext::*;
+use syn::*;
 
 use aead::{Aead, Key, NewAead, Nonce};
 use digest::Digest;
@@ -160,12 +161,6 @@ impl ToTokens for FormatArgs {
 
 struct StrReplace;
 
-impl Fold for StrReplace {
-    fn fold_lit_str(&mut self, s: LitStr) -> LitStr {
-        LitStr::new("Fucking hell", s.span())
-    }
-}
-
 impl VisitMut for StrReplace {
     fn visit_lit_str_mut(&mut self, node: &mut LitStr) {
         *node = LitStr::new("Fucking hell", node.span());
@@ -175,15 +170,46 @@ impl VisitMut for StrReplace {
         match node.parse_body::<FormatArgs>() {
             Ok(mut what) => {
                 if what.positional_args.is_empty() && what.named_args.is_empty() {
-                    StrReplace.visit_expr_mut(&mut what.format_string);
+                    //Change the string literal to ("{}", "str") to allow block expression replacement
+                    let span = what.format_string.span();
+                    what.positional_args.push(std::mem::replace(
+                        &mut what.format_string,
+                        Expr::Lit(ExprLit {
+                            attrs: Vec::new(),
+                            lit: Lit::Str(LitStr::new("{}", span)),
+                        }),
+                    ));
+                    StrReplace.visit_expr_mut(&mut what.positional_args[0]);
                 } else {
-                    what.positional_args.iter_mut().for_each(|mut e| StrReplace.visit_expr_mut(&mut e));
+                    what.positional_args
+                        .iter_mut()
+                        .for_each(|mut e| StrReplace.visit_expr_mut(&mut e));
                 }
                 node.tokens = what.to_token_stream();
             }
             Err(_) => {}
         }
         visit_mut::visit_macro_mut(self, node);
+    }
+    fn visit_expr_mut(&mut self, node: &mut Expr) {
+        if let Expr::Lit(expr) = &node {
+            if let Lit::Str(s) = &expr.lit {
+                eprintln!("Got a string literal expression!");
+                //eprintln!("WOW {:#?}", s);
+                let test = quote! {
+                    {
+                        println!("Wow an extra message");
+                        #s
+                    }
+                };
+                let test = syn::parse2::<ExprBlock>(test).unwrap();
+                //eprintln!("CHANGE {:#?}", test);
+                *node = Expr::Block(test);
+                return;
+            }
+        }
+        // Delegate to the default impl to visit nested expressions.
+        visit_mut::visit_expr_mut(self, node);
     }
 }
 
@@ -211,11 +237,11 @@ pub fn obfuscate(args: TokenStream, input: TokenStream) -> TokenStream {
     let _ = parse_macro_input!(args as AttributeArgs);
     let mut input2 = parse_macro_input!(input2 as ItemFn);
 
-    eprintln!("INPUT: {:#?}", input2);
+    //eprintln!("INPUT: {:#?}", input2);
 
-    //let replaced = StrReplace.fold_item_fn(input2);
     StrReplace.visit_item_fn_mut(&mut input2);
 
+    //eprintln!("OUTPUT: {:#?}", input2);
+
     input2.to_token_stream().into()
-    //replaced.to_token_stream().into()
 }
