@@ -187,12 +187,31 @@ impl VisitMut for StrReplace {
     }
 }
 
+/*
+ * Plan of attack for full encryption of strings
+ * Parse as ItemFn
+ * Fold on Expr objects
+ * Filter/Match only on ExprLit
+ * Filter out ExprLit that aren't strings
+ * Replace ExprLit with ExprBlock
+ * Generate ExprBlock using quote!
+ * Done inside the generic fold_expr call, so we can change the enum type easily
+ *
+ * If we manage to get RNG output in this proc_macro execution, might not even need to worry about
+ * const functions being an annoying edge case
+ * Obviously wouldn't help against const function initialization of static strings
+ * But for that, you can probably get away with a standard EncryptedBox<String> type move
+ * Would need a test to verify that though, but also easy enough to forbid in code review
+ */
+
 #[proc_macro_attribute]
 pub fn obfuscate(args: TokenStream, input: TokenStream) -> TokenStream {
     //eprintln!("INPUT: {:#?}", input);
     let input2 = input.clone();
     let _ = parse_macro_input!(args as AttributeArgs);
     let mut input2 = parse_macro_input!(input2 as ItemFn);
+
+    eprintln!("INPUT: {:#?}", input2);
 
     //let replaced = StrReplace.fold_item_fn(input2);
     StrReplace.visit_item_fn_mut(&mut input2);
