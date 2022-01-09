@@ -149,25 +149,11 @@ impl ToTokens for FormatArgs {
         }
 
         for (idx, (ident, expr)) in self.named_args.iter().enumerate() {
-            //tokens.append_all(quote! {#ident});
-            //tokens.append(Literal::character('='));
-            //tokens.append_all(quote! {#expr});
-
             tokens.append_all(quote! {#ident=#expr});
 
             if idx != self.named_args.len() - 1 {
                 tokens.append(Punct::new(',', Spacing::Alone));
             }
-
-            //format_names.push(ExprAssign {
-            //    attrs: Vec::new(),
-            //    left: Box::new(Expr::Lit(ExprLit{
-            //        attrs: Vec::new(),
-            //        lit: Lit::Str(LitStr::new(&ident.to_string(), Span::call_site())),
-            //    })),
-            //    eq_token: Default::default(),
-            //    right: Box::new(expr)
-            //});
         }
     }
 }
@@ -176,124 +162,27 @@ struct StrReplace;
 
 impl Fold for StrReplace {
     fn fold_lit_str(&mut self, s: LitStr) -> LitStr {
-        eprintln!("WHAT THE FUCK");
         LitStr::new("Fucking hell", s.span())
     }
 }
 
 impl VisitMut for StrReplace {
     fn visit_lit_str_mut(&mut self, node: &mut LitStr) {
-        eprintln!("WHAT THE FUCK FUCK {}", node.token());
         *node = LitStr::new("Fucking hell", node.span());
         visit_mut::visit_lit_str_mut(self, node);
     }
-    fn visit_lit_mut(&mut self, node: &mut Lit) {
-        //eprintln!("WHAT THE FUCK");
-        //eprintln!("FANCY: {:#?}", node);
-        //*node = LitStr::new("Fucking hell", node.span());
-        visit_mut::visit_lit_mut(self, node);
-    }
     fn visit_macro_mut(&mut self, node: &mut Macro) {
-        //let tokens = node.tokens.clone();
-        //let tokens2 = node.tokens.clone();
-        //let tokens3 = node.tokens.clone();
-
-        //for obj in tokens2.into_iter() {
-        //eprintln!("Size hint {:#?}", tokens3.into_iter().last());
-        //let mut iter = tokens2.into_iter();
-        //for obj in tokens2.into_iter().next() {
-        //for (idx, obj) in iter.enumerate() {
-            //eprintln!("SHIT {}: {:#?}", idx, obj);
-        //}
-
-        //let tokens = node.parse_body();
-        //let args: FormatArgs = m.parse_body()?;
-        //match syn::parse2::<LitStr>(tokens) {
-        //match syn::parse2::<ExprArray>(tokens) {
         match node.parse_body::<FormatArgs>() {
-        //match node.parse_body::<File>() {
             Ok(mut what) => {
-                //eprintln!("FANCY: {:#?}", what);
-                //StrReplace.visit_lit_str_mut(&mut what);
-                //let test = what.clone();
-                //for mut e in what.positional_args {
-                    //StrReplace.visit_expr_mut(&mut e);
-                //}
                 if what.positional_args.is_empty() && what.named_args.is_empty() {
                     StrReplace.visit_expr_mut(&mut what.format_string);
                 } else {
                     what.positional_args.iter_mut().for_each(|mut e| StrReplace.visit_expr_mut(&mut e));
                 }
-                eprintln!("FANCY: {:#?}", what);
-
-                //let format = what.format_string;
-                //let pos = what.positional_args;
-
-                //let mut format_names: Vec<ExprAssign> = Vec::with_capacity(what.named_args.len());
-                //for (ident, expr) in what.named_args {
-                //    format_names.push(ExprAssign {
-                //        attrs: Vec::new(),
-                //        left: Box::new(Expr::Lit(ExprLit{
-                //            attrs: Vec::new(),
-                //            lit: Lit::Str(LitStr::new(&ident.to_string(), Span::call_site())),
-                //        })),
-                //        eq_token: Default::default(),
-                //        right: Box::new(expr)
-                //    });
-                //}
-
-                //if format_names.len() > 0 {
-                //    eprintln!("FUCK: {:#?}", format_names[0]);
-                //}
-
-                //let simple = quote! {
-                //    #format, #(#pos),*
-                //};
-                //let pairs = quote! {
-                //    #(#format_names),*
-                //};
-                //let output = quote! {
-                //    #simple #pairs
-                //};
-                //eprintln!("AMAZING: {:#?}", output);
-                //eprintln!("AMAZING: {:#?}", what.to_token_stream());
                 node.tokens = what.to_token_stream();
-                eprintln!("OUTPUT: {:#?}", node.tokens);
             }
             Err(_) => {}
         }
-
-        //let count = tokens.into_iter().count();
-        //for (idx, mut obj) in tokens2.into_iter().enumerate() {
-        //    if count > 1 {
-        //        if node.path.is_ident("println") || node.path.is_ident("format") {
-        //            if idx == 0 {
-        //                continue;
-        //            }
-        //        }
-        //    }
-        //    match obj {
-        //        Literal(n) => {
-        //            let stream: proc_macro2::TokenStream = proc_macro2::TokenStream::from(TokenTree::from(n));
-        //            match syn::parse2::<LitStr>(stream) {
-        //                Ok(what) => {
-        //                    eprintln!("WOW: {:#?}", what);
-        //                    //StrReplace.visit_lit_str_mut(&mut what);
-        //                    //node.tokens = what.to_token_stream();
-        //                    obj = TokenTree::from(proc_macro2::Literal::string("TEST"));
-        //                }
-        //                Err(_) => {}
-        //            }
-        //        }
-        //        _ => {}
-        //    }
-        //}
-
-
-
-
-        //let replaced = StrReplace.fold_item_fn(input2);
-        //eprintln!("FANCY: {:#?}", node.tokens);
         visit_mut::visit_macro_mut(self, node);
     }
 }
@@ -308,23 +197,6 @@ pub fn obfuscate(args: TokenStream, input: TokenStream) -> TokenStream {
     //let replaced = StrReplace.fold_item_fn(input2);
     StrReplace.visit_item_fn_mut(&mut input2);
 
-    //let output = quote! {
-        //#input2
-    //};
-
-    //let test = TokenStream::from(output);
-
-    //println!("Fuck?");
-    eprintln!("The Fuck?");
-    //eprintln!("INPUT: {:#?}", input2);
-    //eprintln!("OUTPUT: {:#?}", test);
-    //eprintln!("OUTPUT: {:#?}", output);
-    //eprintln!("OUTPUT: {:#?}", input2);
-    //eprintln!("OUTPUT: {:#?}", replaced);
-
-    //TokenStream::from(output)
-    //test
-    //output.into()
     input2.to_token_stream().into()
     //replaced.to_token_stream().into()
 }
