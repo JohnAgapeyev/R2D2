@@ -14,7 +14,7 @@ members = [
 
 [[test]]
 name = "tests"
-path = "tests/01-hello_world.rs"
+path = "tests/00-compile.rs"
 
 [dev-dependencies]
 trybuild = { version = "1.0.54", features = ["diff"] }

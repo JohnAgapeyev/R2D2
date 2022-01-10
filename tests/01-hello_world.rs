@@ -1,7 +1,6 @@
 use r2d2::*;
 use r2d2::rand::*;
 
-#[test]
 #[obfuscate]
 fn main() {
     println!("Hello, world!");
