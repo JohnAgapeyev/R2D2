@@ -68,8 +68,8 @@ where
 
     let ciphertext = cipher.encrypt(&nonce, data).unwrap();
 
-    println!("We are encrypting data: {:#x?}", data);
-    println!("Resulting ciphertext: {:#x?}", ciphertext);
+    //println!("We are encrypting data: {:#x?}", data);
+    //println!("Resulting ciphertext: {:#x?}", ciphertext);
 
     MemoryEncryptionCtx::<Cipher> {
         key,
@@ -88,7 +88,7 @@ where
 {
     let cipher = Cipher::new(&ctx.key);
     let output = cipher.decrypt(&ctx.nonce, ctx.ciphertext.as_slice()).unwrap();
-    println!("We decrypted data: {:#x?}", output);
+    //println!("We decrypted data: {:#x?}", output);
     output
 }
 

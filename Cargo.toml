@@ -9,11 +9,12 @@ publish = false
 members = [
     "macros",
     "utils",
+    "compiled",
 ]
 
 [[test]]
 name = "tests"
-path = "tests/00-compile.rs"
+path = "tests/01-hello_world.rs"
 
 [dev-dependencies]
 trybuild = { version = "1.0.54", features = ["diff"] }

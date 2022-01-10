@@ -123,6 +123,7 @@ impl ToTokens for MemEncCtx {
                 nonce: r2d2::Nonce::<XChaCha20Poly1305>::clone_from_slice(&#nonce_name),
                 ciphertext: #ciphertext_name.iter().copied().collect(),
             });
+            std::string::String::from_utf8(result.clone()).unwrap()
         };
 
         //eprintln!("What is the output {:#?}", output);
@@ -166,10 +167,15 @@ impl VisitMut for StrReplace {
                 eprintln!("Got a string literal expression!");
                 //eprintln!("WOW {:#?}", s);
                 let mem_ctx = MemEncCtx(r2d2_utils::encrypt_memory::<XChaCha20Poly1305>(s.value().as_bytes()));
+                //let test = quote! {
+                //    {
+                //        #mem_ctx;
+                //        #s
+                //    }
+                //};
                 let test = quote! {
                     {
-                        #mem_ctx;
-                        #s
+                        #mem_ctx
                     }
                 };
                 let test = syn::parse2::<ExprBlock>(test).unwrap();
