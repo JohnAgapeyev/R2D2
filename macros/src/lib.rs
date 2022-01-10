@@ -1,15 +1,22 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use aead::{Aead, Key, NewAead, Nonce};
+use digest::Digest;
+use generic_array::typenum::U24;
+use generic_array::typenum::U32;
+use generic_array::typenum::U64;
+use generic_array::GenericArray;
+use typenum::type_operators::IsEqual;
+use typenum::True;
+
 use proc_macro::TokenStream;
 use proc_macro2::Literal;
 use proc_macro2::Punct;
 use proc_macro2::Spacing;
 use proc_macro2::Span;
 use proc_macro2::TokenTree;
-use quote::quote;
-use quote::ToTokens;
-use quote::TokenStreamExt;
+use quote::*;
 use syn::ext::*;
 use syn::fold::*;
 use syn::parse::*;
@@ -17,7 +24,11 @@ use syn::spanned::Spanned;
 use syn::visit_mut::*;
 use syn::*;
 
+use chacha20poly1305::XChaCha20Poly1305;
+
 use r2d2_utils::*;
+use r2d2_utils::rand::rngs::OsRng;
+use r2d2_utils::rand::RngCore;
 
 // The arguments expected by libcore's format_args macro, and as a
 // result most other formatting and printing macros like println.
@@ -89,6 +100,37 @@ impl ToTokens for FormatArgs {
     }
 }
 
+struct MemEncCtx(MemoryEncryptionCtx<XChaCha20Poly1305>);
+
+impl ToTokens for MemEncCtx {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let key = &self.0.key;
+        let nonce = &self.0.nonce;
+        let ciphertext = &self.0.ciphertext;
+
+        let key_name = format_ident!("R2D2_Key_{}{}", OsRng.next_u64(), OsRng.next_u64());
+        let nonce_name = format_ident!("R2D2_Nonce_{}{}", OsRng.next_u64(), OsRng.next_u64());
+        let ciphertext_name = format_ident!("R2D2_Ciphertext_{}{}", OsRng.next_u64(), OsRng.next_u64());
+
+
+        //TODO: Can we make this more efficient? (Avoid clone)
+        let output = quote! {
+            let #key_name = [#(#key),*];
+            let #nonce_name = [#(#nonce),*];
+            let #ciphertext_name = [#(#ciphertext),*];
+            let result = r2d2::decrypt_memory::<r2d2::XChaCha20Poly1305>(MemoryEncryptionCtx {
+                key: r2d2::Key::<XChaCha20Poly1305>::clone_from_slice(&#key_name),
+                nonce: r2d2::Nonce::<XChaCha20Poly1305>::clone_from_slice(&#nonce_name),
+                ciphertext: #ciphertext_name.iter().copied().collect(),
+            });
+        };
+
+        //eprintln!("What is the output {:#?}", output);
+
+        tokens.append_all(output);
+    }
+}
+
 struct StrReplace;
 
 impl VisitMut for StrReplace {
@@ -123,11 +165,10 @@ impl VisitMut for StrReplace {
             if let Lit::Str(s) = &expr.lit {
                 eprintln!("Got a string literal expression!");
                 //eprintln!("WOW {:#?}", s);
+                let mem_ctx = MemEncCtx(r2d2_utils::encrypt_memory::<XChaCha20Poly1305>(s.value().as_bytes()));
                 let test = quote! {
                     {
-                        use r2d2::rand::rngs::OsRng;
-                        use r2d2::rand::RngCore;
-                        println!("Wow a random number {}", r2d2::rand::rngs::OsRng.next_u32());
+                        #mem_ctx;
                         #s
                     }
                 };
