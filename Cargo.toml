@@ -23,3 +23,6 @@ libc = "0.2"
 [dependencies]
 r2d2_macros = { path = "macros" }
 r2d2_utils = { path = "utils" }
+
+[profile.release]
+panic = "abort"
