@@ -206,6 +206,82 @@ impl VisitMut for StrReplace {
  * Would need a test to verify that though, but also easy enough to forbid in code review
  */
 
+/*
+ * Plan for runtime string encryption
+ * Need to make a wrapper type obviously
+ * Almost certainly needs to implement Deref and DerefMut
+ * Probably also need to wrap my head around Pin<T>
+ * One thing I'm concerned about is the lifetime of references to the string
+ * AKA, re-encryption when out of scope
+ * Might need to hand out a separate "EncStringRef" type, which implements Drop
+ *
+ * Then have a combo of "string arbiter which decrypts on the fly", and reference thin object
+ * which basically exists to encrypt at rest when the reference count is decremented
+ * Mutations over the use of the reference should be fine since they'd all be proxied through Deref
+ * So things like key rotation wouldn't be noticeable
+ */
+
+/*
+ * Plan for shatter handling
+ * Wait until Rust 1.59, when inline asm should be stabilized
+ * Rely on subtle crate for assert checks in false branches
+ * asm boundary as an optimization barrier
+ * Probably find a nice way of generating arbitrary asm opcodes for junk creation
+ * Can just splice them in every other statement in the function
+ * May even want to consider adding in threading for kicks
+ * Literally just spawn a thread, run that single line of code, then join the thread
+ * May not be viable, but it'd be hilarious spawning tons of threads constantly, I bet it'd be
+ * awful to RE
+ */
+
+/*
+ * Plan for reordering
+ * Probably can just be lazy and do a 2 pass thing
+ * Grab the annotated statements, throw them in a list
+ * Shuffle the list
+ * Re-pass through the statement block
+ * If a statement is annotated, replace it with the head of the shuffled list and pop the head off
+ */
+
+/*
+ * Plan for call site obfuscation
+ * libloading has a "self" function call in the unix/windows specific subsections
+ * Can use that to try and get some DLL callbacks for function calls
+ * There's also an export_name attribute you can use to rename things for exporting
+ * And also another one for section selection
+ * So I can totally mess around with creating a ton of garbage ELF sections, or renaming the
+ * exported function when called via DLL
+ *
+ * There's also the possibility of raw function pointer obfuscation
+ * Rather than dealing with dlsym for it, just using plain old indirection
+ * Found a stack overflow answer that mentioned how to call an arbitrary address (in the context of
+ * OS code)
+ * Basically, cast the thing as a *const (), which is a void pointer IIRC
+ * Then use the almight mem::transmute to transform that into a callable function
+ * Definitely needs to be checked and confirmed
+ * I'm especially skeptical of ABI boundaries and Rust types working here
+ *
+ * It'd be a guaranteed problem with the DLL thing, so function pointer calculation would be nicer
+ * to have
+ * But how would arguments work here?
+ * I'm also worried about generic functions too
+ * Lot of ways for it to go wrong and shit itself
+ * But being able to decrypt a memory address at runtime to call a function would be hilariously
+ * sick
+ */
+
+/*
+ * There is an unstable API in rust for grabbing VTables and creating fat pointers with them
+ * It's nowhere close to being standardized, but it's something to watch out for
+ * Encrypting VTables would be amazing
+ * It's called ptr_metadata, something to keep an eye out for
+ */
+
+/*
+ * Also should probably get a nightly build up and running just so I can use cargo expand to verify
+ * what I'm actually doing at this point
+ */
+
 #[proc_macro_attribute]
 pub fn obfuscate(args: TokenStream, input: TokenStream) -> TokenStream {
     //TODO: Remove the TokenStream clone when things are stabilized
