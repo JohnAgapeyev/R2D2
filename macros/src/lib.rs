@@ -288,13 +288,15 @@ pub fn obfuscate(args: TokenStream, input: TokenStream) -> TokenStream {
     //eprintln!("INPUT: {:#?}", input);
     let input2 = input.clone();
     let _ = parse_macro_input!(args as AttributeArgs);
-    let mut input2 = parse_macro_input!(input2 as ItemFn);
+    let mut input2 = parse_macro_input!(input2 as File);
 
     //eprintln!("INPUT: {:#?}", input2);
+    //eprintln!("INFORMAT: {}", prettyplease::unparse(&input2));
 
-    StrReplace.visit_item_fn_mut(&mut input2);
+    StrReplace.visit_file_mut(&mut input2);
 
     //eprintln!("OUTPUT: {:#?}", input2);
+    //eprintln!("OUTFORMAT: {}", prettyplease::unparse(&input2));
 
     input2.to_token_stream().into()
 }
