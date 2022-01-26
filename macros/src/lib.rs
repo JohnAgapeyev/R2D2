@@ -21,6 +21,7 @@ use syn::ext::*;
 use syn::fold::*;
 use syn::parse::*;
 use syn::spanned::Spanned;
+use syn::visit::*;
 use syn::visit_mut::*;
 use syn::*;
 
@@ -171,6 +172,79 @@ impl VisitMut for StrReplace {
     }
 }
 
+struct ExprShuffle<'ast> {
+    list: Vec<&'ast Expr>,
+}
+
+impl<'ast> Visit<'ast> for ExprShuffle<'ast> {
+    fn visit_expr(&mut self, node: &'ast Expr) {
+        match node {
+            Expr::Array(expr) => if !expr.attrs.is_empty() {
+                for attr in &expr.attrs {
+                    if let Some(ident) = attr.path.get_ident() {
+                        if ident.to_string() == "MyShuffleAttr" {
+                            self.list.push(&node);
+                        }
+                    }
+                }
+            }
+            Expr::Assign(expr) => if !expr.attrs.is_empty() {}
+            Expr::AssignOp(expr) => if !expr.attrs.is_empty() {}
+            Expr::Async(expr) => if !expr.attrs.is_empty() {}
+            Expr::Await(expr) => if !expr.attrs.is_empty() {}
+            Expr::Binary(expr) => if !expr.attrs.is_empty() {}
+            Expr::Block(expr) => if !expr.attrs.is_empty() {}
+            Expr::Box(expr) => if !expr.attrs.is_empty() {}
+            Expr::Break(expr) => if !expr.attrs.is_empty() {}
+            Expr::Call(expr) => if !expr.attrs.is_empty() {}
+            Expr::Cast(expr) => if !expr.attrs.is_empty() {}
+            Expr::Closure(expr) => if !expr.attrs.is_empty() {}
+            Expr::Continue(expr) => if !expr.attrs.is_empty() {}
+            Expr::Field(expr) => if !expr.attrs.is_empty() {}
+            Expr::ForLoop(expr) => if !expr.attrs.is_empty() {}
+            Expr::Group(expr) => if !expr.attrs.is_empty() {}
+            Expr::If(expr) => if !expr.attrs.is_empty() {}
+            Expr::Index(expr) => if !expr.attrs.is_empty() {}
+            Expr::Let(expr) => if !expr.attrs.is_empty() {}
+            Expr::Lit(expr) => if !expr.attrs.is_empty() {}
+            Expr::Loop(expr) => if !expr.attrs.is_empty() {}
+            Expr::Macro(expr) => if !expr.attrs.is_empty() {}
+            Expr::Match(expr) => if !expr.attrs.is_empty() {}
+            Expr::MethodCall(expr) => if !expr.attrs.is_empty() {}
+            Expr::Paren(expr) => if !expr.attrs.is_empty() {}
+            Expr::Path(expr) => if !expr.attrs.is_empty() {}
+            Expr::Range(expr) => if !expr.attrs.is_empty() {}
+            Expr::Reference(expr) => if !expr.attrs.is_empty() {}
+            Expr::Repeat(expr) => if !expr.attrs.is_empty() {}
+            Expr::Return(expr) => if !expr.attrs.is_empty() {}
+            Expr::Struct(expr) => if !expr.attrs.is_empty() {}
+            Expr::Try(expr) => if !expr.attrs.is_empty() {}
+            Expr::TryBlock(expr) => if !expr.attrs.is_empty() {}
+            Expr::Tuple(expr) => if !expr.attrs.is_empty() {}
+            Expr::Type(expr) => if !expr.attrs.is_empty() {}
+            Expr::Unary(expr) => if !expr.attrs.is_empty() {}
+            Expr::Unsafe(expr) => if !expr.attrs.is_empty() {}
+            Expr::While(expr) => if !expr.attrs.is_empty() {}
+            Expr::Yield(expr) => if !expr.attrs.is_empty() {}
+            _ => {}
+        }
+        // Delegate to the default impl to visit nested expressions.
+        visit::visit_expr(self, node);
+    }
+}
+impl<'ast> VisitMut for ExprShuffle<'ast> {
+    fn visit_expr_mut(&mut self, node: &mut Expr) {
+        //TODO: This is insane, will not work, needs fixing
+        if let Expr::Lit(expr) = &node {
+            if !expr.attrs.is_empty() {
+                node.clone_from(self.list[0]);
+            }
+        }
+        // Delegate to the default impl to visit nested expressions.
+        visit_mut::visit_expr_mut(self, node);
+    }
+}
+
 /*
  * Plan of attack for full encryption of strings
  * Parse as ItemFn
@@ -262,6 +336,47 @@ impl VisitMut for StrReplace {
 /*
  * Also should probably get a nightly build up and running just so I can use cargo expand to verify
  * what I'm actually doing at this point
+ */
+
+/*
+ * Shuffle is on hold pending a better solution
+ * Currently, you can't actually add custom attributes to arbitrary statements
+ * See the following example:
+ *
+ *   #[shuffle]
+ *   fn shuffled() {
+ *       #[shufflecase]
+ *       println!("Shuffle line 1");
+ *       println!("Shuffle line 2");
+ *       println!("Shuffle line 3");
+ *       #[shufflecase]
+ *       println!("Shuffle line 4");
+ *       println!("Shuffle line 5");
+ *       #[shufflecase]
+ *       println!("Shuffle line 6");
+ *   }
+ *
+ * Trying to register a proc macro for shufflecase produces an error complaining that it's not
+ * possible and to see a github issue for more information.
+ * That leads down a rabbit hole of issues, stabilization, proc_macro hygiene and functionality
+ * rewrites, a total mess.
+ * But the end result is that no, it's not supported, not likely to be added any time soon, tough
+ * luck.
+ * Meaning, if we want to have this kind of functionality, another approach may be required.
+ *
+ * Few ideas:
+ *  - Run this stuff at a build script level, automatically preprocess the entire file prior to
+ *  compilation
+ *  - Custom preprocessor (which honestly could still be Rust), that runs prior to compilation
+ *  - Simple preprocessor that does string parsing style replacement
+ *
+ * Main question is how that preprocessor would work
+ * Do we call it from a build script level?
+ * Can build scripts actually modify code?
+ * Can build scripts remove existing files from compilation? (Modify a copy, and ignore the
+ * original)
+ * Or do we have to hook it into cargo separately, like as an entire foreign application that runs
+ * prior to "cargo build"?
  */
 
 #[proc_macro_attribute]

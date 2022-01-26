@@ -9,7 +9,7 @@ publish = false
 proc-macro = true
 
 [dependencies]
-syn = { version = "1.0.85", features = ["full", "visit-mut", "fold", "extra-traits"] }
+syn = { version = "1.0.85", features = ["full", "visit", "visit-mut", "fold", "extra-traits"] }
 quote = "1.0.14"
 proc-macro2 = "1.0.36"
 prettyplease = "0.1.1"
