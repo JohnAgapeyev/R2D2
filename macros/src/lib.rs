@@ -26,9 +26,9 @@ use syn::*;
 
 use chacha20poly1305::XChaCha20Poly1305;
 
-use r2d2_utils::*;
 use r2d2_utils::rand::rngs::OsRng;
 use r2d2_utils::rand::RngCore;
+use r2d2_utils::*;
 
 // The arguments expected by libcore's format_args macro, and as a
 // result most other formatting and printing macros like println.
@@ -108,26 +108,14 @@ impl ToTokens for MemEncCtx {
         let nonce = &self.0.nonce;
         let ciphertext = &self.0.ciphertext;
 
-        let key_name = format_ident!("R2D2_Key_{}{}", OsRng.next_u64(), OsRng.next_u64());
-        let nonce_name = format_ident!("R2D2_Nonce_{}{}", OsRng.next_u64(), OsRng.next_u64());
-        let ciphertext_name = format_ident!("R2D2_Ciphertext_{}{}", OsRng.next_u64(), OsRng.next_u64());
-
-
-        //TODO: Can we make this more efficient? (Avoid clone)
         let output = quote! {
-            let #key_name = [#(#key),*];
-            let #nonce_name = [#(#nonce),*];
-            let #ciphertext_name = [#(#ciphertext),*];
             let result = r2d2::decrypt_memory::<r2d2::XChaCha20Poly1305>(MemoryEncryptionCtx {
-                key: r2d2::Key::<XChaCha20Poly1305>::clone_from_slice(&#key_name),
-                nonce: r2d2::Nonce::<XChaCha20Poly1305>::clone_from_slice(&#nonce_name),
-                ciphertext: #ciphertext_name.iter().copied().collect(),
+                key: (r2d2::generic_array::arr![u8; #(#key),*]) as r2d2::Key::<XChaCha20Poly1305>,
+                nonce: (r2d2::generic_array::arr![u8; #(#nonce),*]) as r2d2::Nonce::<XChaCha20Poly1305>,
+                ciphertext: ::std::vec![#(#ciphertext),*],
             });
-            std::string::String::from_utf8(result.clone()).unwrap()
+            ::std::string::String::from_utf8(result).unwrap()
         };
-
-        //eprintln!("What is the output {:#?}", output);
-
         tokens.append_all(output);
     }
 }
@@ -165,22 +153,16 @@ impl VisitMut for StrReplace {
         if let Expr::Lit(expr) = &node {
             if let Lit::Str(s) = &expr.lit {
                 eprintln!("Got a string literal expression!");
-                //eprintln!("WOW {:#?}", s);
-                let mem_ctx = MemEncCtx(r2d2_utils::encrypt_memory::<XChaCha20Poly1305>(s.value().as_bytes()));
-                //let test = quote! {
-                //    {
-                //        #mem_ctx;
-                //        #s
-                //    }
-                //};
-                let test = quote! {
+                let mem_ctx = MemEncCtx(r2d2_utils::encrypt_memory::<XChaCha20Poly1305>(
+                    s.value().as_bytes(),
+                ));
+                let output = quote! {
                     {
                         #mem_ctx
                     }
                 };
-                let test = syn::parse2::<ExprBlock>(test).unwrap();
-                //eprintln!("CHANGE {:#?}", test);
-                *node = Expr::Block(test);
+                let output = syn::parse2::<ExprBlock>(output).unwrap();
+                *node = Expr::Block(output);
                 return;
             }
         }
