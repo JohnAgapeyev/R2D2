@@ -1,3 +1,4 @@
+use r2d2::obfuscate;
 use std::env;
 use std::fs;
 use std::fs::DirBuilder;
@@ -10,7 +11,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use walkdir::DirEntry;
 use walkdir::WalkDir;
-use r2d2::obfuscate;
 
 fn generate_temp_folder_name() -> PathBuf {
     let mut output = env::temp_dir();

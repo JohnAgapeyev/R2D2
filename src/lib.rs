@@ -230,9 +230,7 @@ impl VisitMut for StrReplace {
     fn visit_expr_mut(&mut self, node: &mut Expr) {
         if let Expr::Lit(expr) = &node {
             if let Lit::Str(s) = &expr.lit {
-                let mem_ctx = MemEncCtx(encrypt_memory::<XChaCha20Poly1305>(
-                    s.value().as_bytes(),
-                ));
+                let mem_ctx = MemEncCtx(encrypt_memory::<XChaCha20Poly1305>(s.value().as_bytes()));
                 let output = quote! {
                     {
                         #mem_ctx
