@@ -456,20 +456,16 @@ impl<'ast> VisitMut for ExprShuffle<'ast> {
  * prior to "cargo build"?
  */
 
-//pub fn obfuscate(args: TokenStream, input: TokenStream) -> TokenStream {
-//    //TODO: Remove the TokenStream clone when things are stabilized
-//    //eprintln!("INPUT: {:#?}", input);
-//    let input2 = input.clone();
-//    let _ = parse_macro_input!(args as AttributeArgs);
-//    let mut input2 = parse_macro_input!(input2 as File);
-//
-//    //eprintln!("INPUT: {:#?}", input2);
-//    //eprintln!("INFORMAT: {}", prettyplease::unparse(&input2));
-//
-//    StrReplace.visit_file_mut(&mut input2);
-//
-//    //eprintln!("OUTPUT: {:#?}", input2);
-//    //eprintln!("OUTFORMAT: {}", prettyplease::unparse(&input2));
-//
-//    input2.to_token_stream().into()
-//}
+pub fn obfuscate(input: &String) -> String {
+    let mut input2 = syn::parse_file(&input).unwrap();
+
+    //eprintln!("INPUT: {:#?}", input2);
+    //eprintln!("INFORMAT: {}", prettyplease::unparse(&input2));
+
+    StrReplace.visit_file_mut(&mut input2);
+
+    //eprintln!("OUTPUT: {:#?}", input2);
+    //eprintln!("OUTFORMAT: {}", prettyplease::unparse(&input2));
+
+    prettyplease::unparse(&input2)
+}

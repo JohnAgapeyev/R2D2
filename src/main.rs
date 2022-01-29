@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use walkdir::DirEntry;
 use walkdir::WalkDir;
+use r2d2::obfuscate;
 
 fn generate_temp_folder_name() -> PathBuf {
     let mut output = env::temp_dir();
@@ -17,6 +18,9 @@ fn generate_temp_folder_name() -> PathBuf {
     output
 }
 
+//TODO: Only copy differences with hashes/mtime checks
+//TODO: This needs to be optimized and cleaned up
+//TODO: Fix the error checking
 fn copy_dir(from: &PathBuf, to: &PathBuf) -> io::Result<()> {
     let files: Vec<_> = WalkDir::new(from)
         .into_iter()
@@ -56,7 +60,7 @@ fn copy_dir(from: &PathBuf, to: &PathBuf) -> io::Result<()> {
 
             dest_dir.push_str(&filename);
 
-            //TODO: This is all a mess
+            //TODO: This error handling is a mess
             DirBuilder::new().recursive(true).create(&dest_dir).unwrap();
         });
 
@@ -84,15 +88,22 @@ fn copy_dir(from: &PathBuf, to: &PathBuf) -> io::Result<()> {
                 .create_new(true)
                 .open(&dest_file)
                 .unwrap();
-            fs::copy(Path::new(&src_file), dest_file).unwrap();
+
+            if filename.ends_with(".rs") {
+                println!("Rust source file {}", filename);
+                let contents = fs::read_to_string(Path::new(&src_file)).unwrap();
+                let obfuscated = obfuscate(&contents);
+                println!("Obfuscated source {}", &obfuscated);
+                fs::write(Path::new(&src_file), &obfuscated).unwrap();
+            } else {
+                fs::copy(Path::new(&src_file), dest_file).unwrap();
+            }
         });
 
     Ok(())
 }
 
 fn main() -> io::Result<()> {
-    println!("Hello world");
-
     let src = env::current_dir()?;
     let dest = generate_temp_folder_name();
 
@@ -116,7 +127,7 @@ fn main() -> io::Result<()> {
     io::stdout().write_all(&output.stdout).unwrap();
     io::stderr().write_all(&output.stderr).unwrap();
 
-    fs::remove_dir_all(dest)?;
+    //Don't remove the build dir, we want to debug it if things go wrong
 
     Ok(())
 }
