@@ -2,12 +2,15 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use std::env;
 use std::fs;
-use std::fs::DirEntry;
+use std::fs::DirBuilder;
+use std::fs::OpenOptions;
 use std::io;
+use std::io::ErrorKind;
 use std::path::PathBuf;
+use walkdir::DirEntry;
 use walkdir::WalkDir;
 
-fn create_working_dir() -> PathBuf {
+fn generate_temp_folder_name() -> PathBuf {
     let mut output = env::temp_dir();
     output.push(format!(
         ".r2d2_build_dir_{}{}{}{}",
@@ -45,7 +48,7 @@ fn create_working_dir() -> PathBuf {
 //}
 
 fn copy_dir() -> io::Result<()> {
-    let dest = create_working_dir();
+    let dest = generate_temp_folder_name();
 
     //let (dirs, files): (Vec<DirEntry>, Vec<DirEntry>) = fs::read_dir(env::current_dir()?)?
     //    .filter_map(|entry| entry.ok())
@@ -77,21 +80,65 @@ fn copy_dir() -> io::Result<()> {
                 .map(|s| s.starts_with("."))
                 .unwrap_or(false)
         })
-        .filter(|e| e.is_ok())
-        .map(|e| e.unwrap())
         .collect();
 
-    files.iter().map(|file| file.path()).for_each(|file| fs::copy());
+    if files.iter().all(|e| !e.is_ok()) {
+        return Err(io::Error::new(
+            ErrorKind::PermissionDenied,
+            "Some files can't be accessed",
+        ));
+    }
 
-    //println!("{:#?}", dirs);
-    println!("{:#?}", files);
-    //println!("{:#?}", df);
+    DirBuilder::new().recursive(true).create(&dest)?;
+
+    let (dirs, files): (Vec<DirEntry>, Vec<DirEntry>) = files
+        .into_iter()
+        .map(|f| f.unwrap())
+        .partition(|e| e.file_type().is_dir());
+
+    dirs.into_iter().for_each(|d| {
+        let mut dest_dir = String::from(dest.to_str().unwrap());
+        dest_dir.push_str(
+            d.path()
+                .to_str()
+                .unwrap()
+                .strip_prefix(env::current_dir().unwrap().to_str().unwrap())
+                .unwrap(),
+        );
+
+        println!("{:#?}\n{:#?}", d.path(), &dest_dir);
+
+        //TODO: This is all a mess
+        DirBuilder::new().recursive(true).create(&dest_dir).unwrap();
+    });
+
+    files
+        .into_iter()
+        .for_each(|f| {
+            let mut dest_file = String::from(dest.to_str().unwrap());
+            dest_file.push_str(
+                f.path()
+                    .to_str()
+                    .unwrap()
+                    .strip_prefix(env::current_dir().unwrap().to_str().unwrap())
+                    .unwrap(),
+            );
+
+            println!("{:#?}\n{:#?}", f.path(), &dest_file);
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&dest_file);
+            fs::copy(f.path(), dest_file);
+        });
+
+    fs::remove_dir_all(dest)?;
+
     Ok(())
 }
 
 fn main() -> io::Result<()> {
     println!("Hello world");
-    println!("Creating {:#?}", create_working_dir().as_os_str());
 
     copy_dir()?;
 
