@@ -94,7 +94,7 @@ fn copy_dir(from: &PathBuf, to: &PathBuf) -> io::Result<()> {
                 let contents = fs::read_to_string(Path::new(&src_file)).unwrap();
                 let obfuscated = obfuscate(&contents);
                 println!("Obfuscated source {}", &obfuscated);
-                fs::write(Path::new(&src_file), &obfuscated).unwrap();
+                fs::write(Path::new(&dest_file), &obfuscated).unwrap();
             } else {
                 fs::copy(Path::new(&src_file), dest_file).unwrap();
             }

@@ -190,7 +190,7 @@ impl ToTokens for MemEncCtx {
                 nonce: (generic_array::arr![u8; #(#nonce),*]) as Nonce::<XChaCha20Poly1305>,
                 ciphertext: ::std::vec![#(#ciphertext),*],
             });
-            ::std::string::String::from_utf8(result).unwrap()
+            ::std::string::String::from_utf8(result).unwrap().as_str()
         };
         tokens.append_all(output);
     }
