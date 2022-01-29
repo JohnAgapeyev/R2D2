@@ -1,5 +1,3 @@
-use rand::rngs::OsRng;
-use rand::RngCore;
 use std::env;
 use std::fs;
 use std::fs::DirBuilder;
@@ -15,13 +13,7 @@ use walkdir::WalkDir;
 
 fn generate_temp_folder_name() -> PathBuf {
     let mut output = env::temp_dir();
-    output.push(format!(
-        ".r2d2_build_dir_{}{}{}{}",
-        OsRng.next_u64(),
-        OsRng.next_u64(),
-        OsRng.next_u64(),
-        OsRng.next_u64()
-    ));
+    output.push(".r2d2_build_dir");
     output
 }
 
@@ -103,6 +95,11 @@ fn main() -> io::Result<()> {
 
     let src = env::current_dir()?;
     let dest = generate_temp_folder_name();
+
+    if let Ok(_) = std::fs::metadata(&dest) {
+        //Clean up the folder if it already exists
+        let _ = fs::remove_dir_all(&dest);
+    }
 
     DirBuilder::new().recursive(true).create(&dest)?;
 
