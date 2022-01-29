@@ -32,6 +32,8 @@ use syn::*;
 use typenum;
 use typenum::type_operators::IsEqual;
 use typenum::True;
+//TODO: Is there a better way to handle this?
+use crate as r2d2;
 
 struct CryptoCtx {
     tx_key: [u8; 32],
@@ -185,9 +187,9 @@ impl ToTokens for MemEncCtx {
         let ciphertext = &self.0.ciphertext;
 
         let output = quote! {
-            let result = decrypt_memory::<XChaCha20Poly1305>(MemoryEncryptionCtx {
-                key: (generic_array::arr![u8; #(#key),*]) as Key::<XChaCha20Poly1305>,
-                nonce: (generic_array::arr![u8; #(#nonce),*]) as Nonce::<XChaCha20Poly1305>,
+            let result = r2d2::decrypt_memory::<::chacha20poly1305::XChaCha20Poly1305>(r2d2::MemoryEncryptionCtx {
+                key: (::generic_array::arr![u8; #(#key),*]) as ::aead::Key::<::chacha20poly1305::XChaCha20Poly1305>,
+                nonce: (::generic_array::arr![u8; #(#nonce),*]) as ::aead::Nonce::<::chacha20poly1305::XChaCha20Poly1305>,
                 ciphertext: ::std::vec![#(#ciphertext),*],
             });
             ::std::string::String::from_utf8(result).unwrap().as_str()
@@ -228,7 +230,6 @@ impl VisitMut for StrReplace {
     fn visit_expr_mut(&mut self, node: &mut Expr) {
         if let Expr::Lit(expr) = &node {
             if let Lit::Str(s) = &expr.lit {
-                eprintln!("Got a string literal expression!");
                 let mem_ctx = MemEncCtx(encrypt_memory::<XChaCha20Poly1305>(
                     s.value().as_bytes(),
                 ));
