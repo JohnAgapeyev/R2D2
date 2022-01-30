@@ -213,6 +213,11 @@ impl VisitMut for StrReplace {
 
                 //TODO: The string literals in the match keys are getting encrypted, need to add
                 //logic to avoid this
+                //
+                //Probably need something like a visit_arm_mut handler, set a flag for the pattern,
+                //or skip it or something
+                //Basically wrap the nested visit handler call with a flag, then check for the flag
+                //being set in a different handler
                 let mut can_encrypt = match macro_path.as_str() {
                     "println" => true,
                     "format" => true,
@@ -493,7 +498,7 @@ impl<'ast> VisitMut for ExprShuffle<'ast> {
 pub fn obfuscate(input: &String) -> String {
     let mut input2 = syn::parse_file(&input).unwrap();
 
-    //eprintln!("INPUT: {:#?}", input2);
+    eprintln!("INPUT: {:#?}", input2);
     //eprintln!("INFORMAT: {}", prettyplease::unparse(&input2));
 
     StrReplace.visit_file_mut(&mut input2);
