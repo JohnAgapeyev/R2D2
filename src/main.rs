@@ -8,8 +8,8 @@ use std::fs::DirBuilder;
 use std::fs::OpenOptions;
 use std::io;
 use std::io::ErrorKind;
-use std::io::Write;
 use std::process::Command;
+use std::process::Stdio;
 use walkdir::WalkDir;
 
 fn generate_temp_folder_name() -> Utf8PathBuf {
@@ -97,16 +97,19 @@ fn main() -> io::Result<()> {
 
     copy_dir(&src, &dest)?;
 
-    let output = Command::new("cargo")
+    println!("Calling cargo build");
+
+    Command::new("cargo")
         .arg("build")
         .arg("--target-dir")
         .arg(format!("{}/target", src.to_string()))
         .current_dir(&dest)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .output()
         .expect("failed to execute process");
 
-    io::stdout().write_all(&output.stdout).unwrap();
-    io::stderr().write_all(&output.stderr).unwrap();
+    println!("Process is done");
 
     //Don't remove the build dir, we want to debug it if things go wrong
 
