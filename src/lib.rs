@@ -221,43 +221,38 @@ impl VisitMut for StrReplace {
             return;
         }
 
-        match node.parse_body::<FormatArgs>() {
-            Ok(mut what) => {
-                if can_encrypt {
-                    if let Expr::Lit(expr) = &what.format_string {
-                        if let Lit::Str(s) = &expr.lit {
-                            //println!("Will try and encrypt with format string \"{}\"", s.value());
-                            if s.value().contains("{") {
-                                //Don't mess with format strings that aren't trivial
-                                can_encrypt = false;
-                            }
-                        } else {
-                            panic!("Format string is not a string literal!");
-                        }
-                    } else {
-                        panic!("Format string is not a literal expression!");
+        if let Ok(mut parsed) = node.parse_body::<FormatArgs>() {
+            if let Expr::Lit(expr) = &parsed.format_string {
+                if let Lit::Str(s) = &expr.lit {
+                    if s.value().contains("{") {
+                        //Don't mess with format strings that aren't trivial
+                        can_encrypt = false;
                     }
-                }
-
-                if what.positional_args.is_empty() && what.named_args.is_empty() && can_encrypt {
-                    //Change the string literal to ("{}", "str") to allow block expression replacement
-                    let span = what.format_string.span();
-                    what.positional_args.push(std::mem::replace(
-                        &mut what.format_string,
-                        Expr::Lit(ExprLit {
-                            attrs: Vec::new(),
-                            lit: Lit::Str(LitStr::new("{}", span)),
-                        }),
-                    ));
-                    visit_mut::visit_expr_mut(self, &mut what.positional_args[0]);
                 } else {
-                    what.positional_args
-                        .iter_mut()
-                        .for_each(|mut e| visit_mut::visit_expr_mut(self, &mut e));
+                    panic!("Format string is not a string literal!");
                 }
-                node.tokens = what.to_token_stream();
+            } else {
+                panic!("Format string is not a literal expression!");
             }
-            Err(_) => {}
+
+            if parsed.positional_args.is_empty() && parsed.named_args.is_empty() && can_encrypt {
+                //Change the string literal to ("{}", "str") to allow block expression replacement
+                let span = parsed.format_string.span();
+                parsed.positional_args.push(std::mem::replace(
+                    &mut parsed.format_string,
+                    Expr::Lit(ExprLit {
+                        attrs: Vec::new(),
+                        lit: Lit::Str(LitStr::new("{}", span)),
+                    }),
+                ));
+                visit_mut::visit_expr_mut(self, &mut parsed.positional_args[0]);
+            } else {
+                parsed
+                    .positional_args
+                    .iter_mut()
+                    .for_each(|mut e| visit_mut::visit_expr_mut(self, &mut e));
+            }
+            node.tokens = parsed.to_token_stream();
         }
         visit_mut::visit_macro_mut(self, node);
     }
