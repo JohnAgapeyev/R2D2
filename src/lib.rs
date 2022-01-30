@@ -204,8 +204,43 @@ impl VisitMut for StrReplace {
     fn visit_macro_mut(&mut self, node: &mut Macro) {
         match node.parse_body::<FormatArgs>() {
             Ok(mut what) => {
-                //TODO: Do we need to restrict this to "println!" and "format!" macros?
-                if what.positional_args.is_empty() && what.named_args.is_empty() {
+                let macro_path = node
+                    .path
+                    .get_ident()
+                    .map(|ident| ident.to_string())
+                    .unwrap_or_default();
+                println!("What is the macro {}", macro_path);
+
+                //TODO: The string literals in the match keys are getting encrypted, need to add
+                //logic to avoid this
+                let mut can_encrypt = match macro_path.as_str() {
+                    "println" => true,
+                    "format" => true,
+                    _ => false,
+                };
+
+                if can_encrypt {
+                    if let Expr::Lit(expr) = &what.format_string {
+                        if let Lit::Str(s) = &expr.lit {
+                            //println!("Will try and encrypt with format string \"{}\"", s.value());
+                            if s.value().contains("{") {
+                                //Don't mess with format strings that aren't trivial
+                                can_encrypt = false;
+                            }
+                        } else {
+                            panic!("Format string is not a string literal!");
+                        }
+                    } else {
+                        panic!("Format string is not a literal expression!");
+                    }
+                }
+
+                println!(
+                    "Arg is {} and will we modify it? {}",
+                    macro_path, can_encrypt
+                );
+
+                if what.positional_args.is_empty() && what.named_args.is_empty() && can_encrypt {
                     //Change the string literal to ("{}", "str") to allow block expression replacement
                     let span = what.format_string.span();
                     what.positional_args.push(std::mem::replace(

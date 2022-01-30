@@ -1,6 +1,7 @@
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use cargo_metadata::MetadataCommand;
+use clap::{app_from_crate, arg, App, AppSettings};
 use r2d2::obfuscate;
 use std::env;
 use std::fs;
@@ -21,7 +22,7 @@ fn generate_temp_folder_name() -> Utf8PathBuf {
 //TODO: Only copy differences with hashes/mtime checks
 //TODO: This needs to be optimized and cleaned up
 //TODO: Fix the error checking
-fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf) -> io::Result<()> {
+fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf, skip_obfuscate: bool) -> io::Result<()> {
     let files: Vec<_> = WalkDir::new(from)
         .into_iter()
         .filter_entry(|e| {
@@ -66,7 +67,7 @@ fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf) -> io::Result<()> {
             .create_new(true)
             .open(&dest_file)?;
 
-        if file.ends_with(".rs") {
+        if file.extension().unwrap_or_default().eq("rs") && !skip_obfuscate {
             let contents = fs::read_to_string(src_file)?;
             let obfuscated = obfuscate(&contents);
             fs::write(dest_file, &obfuscated)?;
@@ -85,7 +86,7 @@ struct SourceInformation {
 
 fn get_src_dir() -> SourceInformation {
     let metadata = MetadataCommand::new().exec().unwrap();
-    println!("Root is at {}", metadata.workspace_root);
+    //println!("Root is at {}", metadata.workspace_root);
     SourceInformation {
         workspace_root: metadata.workspace_root,
         target_dir: metadata.target_directory,
@@ -93,6 +94,118 @@ fn get_src_dir() -> SourceInformation {
 }
 
 fn main() -> io::Result<()> {
+    let matches = app_from_crate!()
+        .global_setting(AppSettings::PropagateVersion)
+        .global_setting(AppSettings::UseLongFormatForHelpSubcommand)
+        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .subcommand(
+            App::new("build")
+                .about("Compile a local package and all of its dependencies")
+                .arg(
+                    arg!(args: [args])
+                        .help("Arguments to pass to cargo")
+                        .multiple_occurrences(true)
+                        .last(true)
+                        .required(false),
+                ),
+        )
+        .subcommand(
+            App::new("check")
+                .about(
+                    "Analyze the current package and report errors, but don't build object files",
+                )
+                .arg(
+                    arg!(args: [args])
+                        .help("Arguments to pass to cargo")
+                        .multiple_occurrences(true)
+                        .last(true)
+                        .required(false),
+                ),
+        )
+        .subcommand(
+            App::new("clean")
+                .about("Remove artifacts that cargo has generated in the past")
+                .arg(
+                    arg!(args: [args])
+                        .help("Arguments to pass to cargo")
+                        .multiple_occurrences(true)
+                        .last(true)
+                        .required(false),
+                ),
+        )
+        .subcommand(
+            App::new("run")
+                .about("Run a binary or example of the local package")
+                .arg(
+                    arg!(args: [args])
+                        .help("Arguments to pass to cargo")
+                        .multiple_occurrences(true)
+                        .last(true)
+                        .required(false),
+                ),
+        )
+        .subcommand(
+            App::new("test")
+                .about(
+                    "Execute all unit and integration tests and build examples of a local package",
+                )
+                .arg(
+                    arg!(args: [args])
+                        .help("Arguments to pass to cargo")
+                        .multiple_occurrences(true)
+                        .last(true)
+                        .required(false),
+                ),
+        )
+        .arg(arg!(-p --plain "Disable obfuscation of the workspace").required(false))
+        .get_matches();
+
+    let cargo_args: Vec<&str>;
+
+    match matches.subcommand() {
+        Some(("build", sub_matches)) => {
+            cargo_args = sub_matches
+                .values_of("args")
+                .map(|vals| vals.collect::<Vec<_>>())
+                .unwrap_or_default();
+            println!("Build was called with args {:#?}", &cargo_args)
+        }
+        Some(("check", sub_matches)) => {
+            cargo_args = sub_matches
+                .values_of("args")
+                .map(|vals| vals.collect::<Vec<_>>())
+                .unwrap_or_default();
+            println!("Check was called with args {:#?}", &cargo_args)
+        }
+        Some(("clean", sub_matches)) => {
+            cargo_args = sub_matches
+                .values_of("args")
+                .map(|vals| vals.collect::<Vec<_>>())
+                .unwrap_or_default();
+            println!("Clean was called with args {:#?}", &cargo_args)
+        }
+        Some(("run", sub_matches)) => {
+            cargo_args = sub_matches
+                .values_of("args")
+                .map(|vals| vals.collect::<Vec<_>>())
+                .unwrap_or_default();
+            println!("Run was called with args {:#?}", &cargo_args)
+        }
+        Some(("test", sub_matches)) => {
+            cargo_args = sub_matches
+                .values_of("args")
+                .map(|vals| vals.collect::<Vec<_>>())
+                .unwrap_or_default();
+            println!("Test was called with args {:#?}", &cargo_args)
+        }
+        _ => unreachable!(
+            "Exhausted list of subcommands and SubcommandRequiredElseHelp prevents `None`"
+        ),
+    }
+
+    let no_obfuscate = matches.is_present("plain");
+    println!("Are we obfuscating? {}", !&no_obfuscate);
+
     let src = get_src_dir();
     let dest = generate_temp_folder_name();
 
@@ -103,7 +216,7 @@ fn main() -> io::Result<()> {
 
     DirBuilder::new().recursive(true).create(&dest)?;
 
-    copy_dir(&src.workspace_root, &dest)?;
+    copy_dir(&src.workspace_root, &dest, no_obfuscate)?;
 
     println!("Calling cargo build");
 
