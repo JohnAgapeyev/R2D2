@@ -1,3 +1,4 @@
+use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use cargo_metadata::MetadataCommand;
 use r2d2::obfuscate;
@@ -8,9 +9,7 @@ use std::fs::OpenOptions;
 use std::io;
 use std::io::ErrorKind;
 use std::io::Write;
-use std::path::Path;
 use std::process::Command;
-use walkdir::DirEntry;
 use walkdir::WalkDir;
 
 fn generate_temp_folder_name() -> Utf8PathBuf {
@@ -40,64 +39,41 @@ fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf) -> io::Result<()> {
         ));
     }
 
-    let (dirs, files): (Vec<DirEntry>, Vec<DirEntry>) = files
+    let (dirs, files): (Vec<Utf8PathBuf>, Vec<Utf8PathBuf>) = files
         .into_iter()
-        .map(|f| f.unwrap())
-        .partition(|e| e.file_type().is_dir());
-
-    dirs.into_iter()
-        .map(|d| {
-            String::from(
-                d.path()
-                    .to_str()
+        .map(|e| {
+            Utf8PathBuf::from(
+                Utf8Path::from_path(e.unwrap().path())
                     .unwrap()
                     .strip_prefix(&from.to_string())
                     .unwrap(),
             )
         })
-        .filter(|filename| !filename.contains("/target"))
-        .for_each(|filename| {
-            let mut dest_dir = to.to_string();
+        .filter(|path| !path.to_string().is_empty() && !path.to_string().starts_with("target/"))
+        .partition(|e| e.is_dir());
 
-            dest_dir.push_str(&filename);
+    for dir in dirs {
+        let dest_dir = to.as_std_path().join(dir);
+        DirBuilder::new().recursive(true).create(&dest_dir)?;
+    }
 
-            //TODO: This error handling is a mess
-            DirBuilder::new().recursive(true).create(&dest_dir).unwrap();
-        });
+    for file in files {
+        let dest_file = Utf8PathBuf::from(to).join(&file);
+        let src_file = Utf8PathBuf::from(from).join(&file);
 
-    files
-        .into_iter()
-        .map(|f| {
-            String::from(
-                f.path()
-                    .to_str()
-                    .unwrap()
-                    .strip_prefix(&from.to_string())
-                    .unwrap(),
-            )
-        })
-        .filter(|filename| !filename.contains("/target"))
-        .for_each(|filename| {
-            let mut dest_file = to.to_string();
-            dest_file.push_str(&filename);
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dest_file)?;
 
-            let mut src_file = from.to_string();
-            src_file.push_str(&filename);
-
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&dest_file)
-                .unwrap();
-
-            if filename.ends_with(".rs") {
-                let contents = fs::read_to_string(Path::new(&src_file)).unwrap();
-                let obfuscated = obfuscate(&contents);
-                fs::write(Path::new(&dest_file), &obfuscated).unwrap();
-            } else {
-                fs::copy(Path::new(&src_file), dest_file).unwrap();
-            }
-        });
+        if file.ends_with(".rs") {
+            let contents = fs::read_to_string(src_file)?;
+            let obfuscated = obfuscate(&contents);
+            fs::write(dest_file, &obfuscated)?;
+        } else {
+            fs::copy(src_file, dest_file)?;
+        }
+    }
 
     Ok(())
 }
