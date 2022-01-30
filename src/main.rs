@@ -78,10 +78,18 @@ fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf) -> io::Result<()> {
     Ok(())
 }
 
-fn get_src_dir() -> Utf8PathBuf {
+struct SourceInformation {
+    workspace_root: Utf8PathBuf,
+    target_dir: Utf8PathBuf,
+}
+
+fn get_src_dir() -> SourceInformation {
     let metadata = MetadataCommand::new().exec().unwrap();
     println!("Root is at {}", metadata.workspace_root);
-    metadata.workspace_root
+    SourceInformation {
+        workspace_root: metadata.workspace_root,
+        target_dir: metadata.target_directory,
+    }
 }
 
 fn main() -> io::Result<()> {
@@ -95,14 +103,14 @@ fn main() -> io::Result<()> {
 
     DirBuilder::new().recursive(true).create(&dest)?;
 
-    copy_dir(&src, &dest)?;
+    copy_dir(&src.workspace_root, &dest)?;
 
     println!("Calling cargo build");
 
     Command::new("cargo")
         .arg("build")
         .arg("--target-dir")
-        .arg(format!("{}/target", src.to_string()))
+        .arg(&src.target_dir)
         .current_dir(&dest)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
