@@ -202,28 +202,27 @@ struct StrReplace;
 
 impl VisitMut for StrReplace {
     fn visit_macro_mut(&mut self, node: &mut Macro) {
+        let macro_path = node
+            .path
+            .get_ident()
+            .map(|ident| ident.to_string())
+            .unwrap_or_default();
+        let mut can_encrypt = match macro_path.as_str() {
+            "println" => true,
+            "eprintln" => true,
+            "format" => true,
+            "concat" => true,
+            _ => false,
+        };
+
+        //Don't even process macros we don't understand
+        if !can_encrypt {
+            visit_mut::visit_macro_mut(self, node);
+            return;
+        }
+
         match node.parse_body::<FormatArgs>() {
             Ok(mut what) => {
-                let macro_path = node
-                    .path
-                    .get_ident()
-                    .map(|ident| ident.to_string())
-                    .unwrap_or_default();
-                println!("What is the macro {}", macro_path);
-
-                //TODO: The string literals in the match keys are getting encrypted, need to add
-                //logic to avoid this
-                //
-                //Probably need something like a visit_arm_mut handler, set a flag for the pattern,
-                //or skip it or something
-                //Basically wrap the nested visit handler call with a flag, then check for the flag
-                //being set in a different handler
-                let mut can_encrypt = match macro_path.as_str() {
-                    "println" => true,
-                    "format" => true,
-                    _ => false,
-                };
-
                 if can_encrypt {
                     if let Expr::Lit(expr) = &what.format_string {
                         if let Lit::Str(s) = &expr.lit {
@@ -240,11 +239,6 @@ impl VisitMut for StrReplace {
                     }
                 }
 
-                println!(
-                    "Arg is {} and will we modify it? {}",
-                    macro_path, can_encrypt
-                );
-
                 if what.positional_args.is_empty() && what.named_args.is_empty() && can_encrypt {
                     //Change the string literal to ("{}", "str") to allow block expression replacement
                     let span = what.format_string.span();
@@ -255,11 +249,11 @@ impl VisitMut for StrReplace {
                             lit: Lit::Str(LitStr::new("{}", span)),
                         }),
                     ));
-                    StrReplace.visit_expr_mut(&mut what.positional_args[0]);
+                    visit_mut::visit_expr_mut(self, &mut what.positional_args[0]);
                 } else {
                     what.positional_args
                         .iter_mut()
-                        .for_each(|mut e| StrReplace.visit_expr_mut(&mut e));
+                        .for_each(|mut e| visit_mut::visit_expr_mut(self, &mut e));
                 }
                 node.tokens = what.to_token_stream();
             }
@@ -283,6 +277,11 @@ impl VisitMut for StrReplace {
         }
         // Delegate to the default impl to visit nested expressions.
         visit_mut::visit_expr_mut(self, node);
+    }
+
+    fn visit_arm_mut(&mut self, node: &mut Arm) {
+        //Don't visit patterns, those string literals can't be replaced
+        visit_mut::visit_expr_mut(self, &mut node.body);
     }
 }
 
@@ -498,7 +497,7 @@ impl<'ast> VisitMut for ExprShuffle<'ast> {
 pub fn obfuscate(input: &String) -> String {
     let mut input2 = syn::parse_file(&input).unwrap();
 
-    eprintln!("INPUT: {:#?}", input2);
+    //eprintln!("INPUT: {:#?}", input2);
     //eprintln!("INFORMAT: {}", prettyplease::unparse(&input2));
 
     StrReplace.visit_file_mut(&mut input2);
