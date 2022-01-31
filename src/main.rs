@@ -203,6 +203,9 @@ fn main() -> io::Result<()> {
         ),
     }
 
+    //Unwrap can't fail due to previous match unreachable check
+    let cargo_subcommand = matches.subcommand_name().unwrap();
+
     let no_obfuscate = matches.is_present("plain");
     println!("Are we obfuscating? {}", !&no_obfuscate);
 
@@ -218,12 +221,13 @@ fn main() -> io::Result<()> {
 
     copy_dir(&src.workspace_root, &dest, no_obfuscate)?;
 
-    println!("Calling cargo build");
+    println!("Calling cargo");
 
     Command::new("cargo")
-        .arg("build")
+        .arg(cargo_subcommand)
         .arg("--target-dir")
         .arg(&src.target_dir)
+        .args(cargo_args)
         .current_dir(&dest)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
