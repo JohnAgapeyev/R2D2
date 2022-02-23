@@ -35,6 +35,8 @@ use typenum::True;
 //TODO: Is there a better way to handle this?
 use crate as r2d2;
 
+//TODO: Consolidate RNG into a "chosen" one to avoid mistakes
+
 struct CryptoCtx {
     tx_key: [u8; 32],
     rx_key: [u8; 32],
@@ -284,58 +286,81 @@ struct ExprShuffle<'ast> {
     list: Vec<&'ast Expr>,
 }
 
+//TODO: Need scoping, separate shuffle regions, as well as function boundaries
+//We don't want to have shuffle being global across a file
+impl<'ast> ExprShuffle<'ast> {
+    fn is_shuffle_attr(attr: &str) -> bool {
+        match attr {
+            "shufflecase" => true,
+            _ => false,
+        }
+    }
+    fn contains_shuffle_attr(attrs: &Vec<Attribute>) -> bool {
+        for attr in attrs {
+            if let Some(ident) = attr.path.get_ident() {
+                if ExprShuffle::is_shuffle_attr(&ident.to_string()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    fn fetch_shuffled_statements(&mut self, attrs: &Vec<Attribute>, node: &'ast Expr) {
+        if ExprShuffle::contains_shuffle_attr(attrs) {
+            self.list.push(&node);
+        }
+    }
+    //TODO: Remove the shuffle attribute from the expression
+    fn replace_shuffle_case(&mut self, attrs: &Vec<Attribute>, node: &Expr) -> Expr {
+        if ExprShuffle::contains_shuffle_attr(attrs) {
+            return self.list[0].clone();
+        }
+        node.clone()
+    }
+}
+
 impl<'ast> Visit<'ast> for ExprShuffle<'ast> {
     fn visit_expr(&mut self, node: &'ast Expr) {
         match node {
-            Expr::Array(expr) => {
-                if !expr.attrs.is_empty() {
-                    for attr in &expr.attrs {
-                        if let Some(ident) = attr.path.get_ident() {
-                            if ident.to_string() == "MyShuffleAttr" {
-                                self.list.push(&node);
-                            }
-                        }
-                    }
-                }
-            }
-            Expr::Assign(expr) => if !expr.attrs.is_empty() {},
-            Expr::AssignOp(expr) => if !expr.attrs.is_empty() {},
-            Expr::Async(expr) => if !expr.attrs.is_empty() {},
-            Expr::Await(expr) => if !expr.attrs.is_empty() {},
-            Expr::Binary(expr) => if !expr.attrs.is_empty() {},
-            Expr::Block(expr) => if !expr.attrs.is_empty() {},
-            Expr::Box(expr) => if !expr.attrs.is_empty() {},
-            Expr::Break(expr) => if !expr.attrs.is_empty() {},
-            Expr::Call(expr) => if !expr.attrs.is_empty() {},
-            Expr::Cast(expr) => if !expr.attrs.is_empty() {},
-            Expr::Closure(expr) => if !expr.attrs.is_empty() {},
-            Expr::Continue(expr) => if !expr.attrs.is_empty() {},
-            Expr::Field(expr) => if !expr.attrs.is_empty() {},
-            Expr::ForLoop(expr) => if !expr.attrs.is_empty() {},
-            Expr::Group(expr) => if !expr.attrs.is_empty() {},
-            Expr::If(expr) => if !expr.attrs.is_empty() {},
-            Expr::Index(expr) => if !expr.attrs.is_empty() {},
-            Expr::Let(expr) => if !expr.attrs.is_empty() {},
-            Expr::Lit(expr) => if !expr.attrs.is_empty() {},
-            Expr::Loop(expr) => if !expr.attrs.is_empty() {},
-            Expr::Macro(expr) => if !expr.attrs.is_empty() {},
-            Expr::Match(expr) => if !expr.attrs.is_empty() {},
-            Expr::MethodCall(expr) => if !expr.attrs.is_empty() {},
-            Expr::Paren(expr) => if !expr.attrs.is_empty() {},
-            Expr::Path(expr) => if !expr.attrs.is_empty() {},
-            Expr::Range(expr) => if !expr.attrs.is_empty() {},
-            Expr::Reference(expr) => if !expr.attrs.is_empty() {},
-            Expr::Repeat(expr) => if !expr.attrs.is_empty() {},
-            Expr::Return(expr) => if !expr.attrs.is_empty() {},
-            Expr::Struct(expr) => if !expr.attrs.is_empty() {},
-            Expr::Try(expr) => if !expr.attrs.is_empty() {},
-            Expr::TryBlock(expr) => if !expr.attrs.is_empty() {},
-            Expr::Tuple(expr) => if !expr.attrs.is_empty() {},
-            Expr::Type(expr) => if !expr.attrs.is_empty() {},
-            Expr::Unary(expr) => if !expr.attrs.is_empty() {},
-            Expr::Unsafe(expr) => if !expr.attrs.is_empty() {},
-            Expr::While(expr) => if !expr.attrs.is_empty() {},
-            Expr::Yield(expr) => if !expr.attrs.is_empty() {},
+            Expr::Array(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Assign(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::AssignOp(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Async(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Await(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Binary(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Block(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Box(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Break(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Call(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Cast(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Closure(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Continue(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Field(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::ForLoop(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Group(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::If(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Index(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Let(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Lit(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Loop(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Macro(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Match(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::MethodCall(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Paren(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Path(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Range(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Reference(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Repeat(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Return(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Struct(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Try(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::TryBlock(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Tuple(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Type(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Unary(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Unsafe(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::While(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
+            Expr::Yield(expr) => self.fetch_shuffled_statements(&expr.attrs, node),
             _ => {}
         }
         // Delegate to the default impl to visit nested expressions.
@@ -344,12 +369,49 @@ impl<'ast> Visit<'ast> for ExprShuffle<'ast> {
 }
 impl<'ast> VisitMut for ExprShuffle<'ast> {
     fn visit_expr_mut(&mut self, node: &mut Expr) {
-        //TODO: This is insane, will not work, needs fixing
-        if let Expr::Lit(expr) = &node {
-            if !expr.attrs.is_empty() {
-                node.clone_from(self.list[0]);
-            }
-        }
+        let new_node = match &*node {
+            Expr::Array(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Assign(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::AssignOp(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Async(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Await(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Binary(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Block(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Box(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Break(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Call(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Cast(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Closure(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Continue(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Field(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::ForLoop(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Group(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::If(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Index(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Let(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Lit(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Loop(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Macro(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Match(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::MethodCall(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Paren(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Path(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Range(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Reference(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Repeat(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Return(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Struct(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Try(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::TryBlock(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Tuple(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Type(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Unary(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Unsafe(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::While(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            Expr::Yield(expr) => self.replace_shuffle_case(&expr.attrs, node),
+            _ => node.to_owned(),
+        };
+        *node = new_node;
         // Delegate to the default impl to visit nested expressions.
         visit_mut::visit_expr_mut(self, node);
     }
