@@ -23,6 +23,10 @@ use rand::prelude::*;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use std::convert::TryInto;
+use std::marker::PhantomData;
+use std::ops::Deref;
+use std::ops::DerefMut;
+use std::ptr;
 use syn::ext::*;
 use syn::fold::*;
 use syn::parse::*;
@@ -111,3 +115,44 @@ where
     output
 }
 
+#[derive(Debug, Clone, Copy, Hash)]
+pub struct EncBox<T>
+where
+    T: ?Sized,
+{
+    underlying: PhantomData<T>,
+    //TODO: Figure out what approach to use for the underlying memory
+    //We need it encrypted and convertable between bytes and type T
+    buffer: *mut T,
+}
+
+impl<T> EncBox<T> {
+    pub fn new() -> EncBox<T> {
+        EncBox {
+            underlying: PhantomData,
+            buffer: ptr::null_mut(),
+        }
+    }
+    pub fn new_with_data(mut data: T) -> EncBox<T> {
+        EncBox {
+            underlying: PhantomData,
+            buffer: ptr::addr_of_mut!(data),
+        }
+    }
+}
+
+impl<T> Deref for EncBox<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        //&self.value
+        unimplemented!();
+    }
+}
+
+impl<T> DerefMut for EncBox<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        //&mut self.value
+        unimplemented!();
+    }
+}
