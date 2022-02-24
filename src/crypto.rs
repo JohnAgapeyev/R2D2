@@ -22,11 +22,16 @@ use rand;
 use rand::prelude::*;
 use rand::rngs::OsRng;
 use rand::RngCore;
+use std::alloc::alloc;
+use std::alloc::dealloc;
+use std::alloc::handle_alloc_error;
+use std::alloc::Layout;
 use std::convert::TryInto;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::ptr;
+use std::ptr::NonNull;
 use syn::ext::*;
 use syn::fold::*;
 use syn::parse::*;
@@ -115,28 +120,55 @@ where
     output
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Hash)]
 pub struct EncBox<T>
 where
-    T: ?Sized,
+    T: Sized,
 {
-    underlying: PhantomData<T>,
-    //TODO: Figure out what approach to use for the underlying memory
-    //We need it encrypted and convertable between bytes and type T
-    buffer: *mut T,
+    _marker: PhantomData<T>,
+    ptr: NonNull<T>,
 }
 
 impl<T> EncBox<T> {
-    pub fn new() -> EncBox<T> {
-        EncBox {
-            underlying: PhantomData,
-            buffer: ptr::null_mut(),
+    fn get_data_layout() -> Layout {
+        Layout::new::<T>()
+    }
+    fn alloc_backing_data() -> NonNull<T> {
+        let layout = EncBox::<T>::get_data_layout();
+        let data = NonNull::new(unsafe { alloc(layout) } as *mut T);
+
+        if let Some(p) = data {
+            return p;
+        } else {
+            handle_alloc_error(layout);
         }
     }
-    pub fn new_with_data(mut data: T) -> EncBox<T> {
+
+    fn copy_data_to_ptr(dest: &mut NonNull<T>, src: T) {
+        unsafe { ptr::write(dest.as_ptr(), src) };
+    }
+
+    pub fn new() -> EncBox<T> {
         EncBox {
-            underlying: PhantomData,
-            buffer: ptr::addr_of_mut!(data),
+            _marker: PhantomData,
+            ptr: NonNull::dangling(),
+        }
+    }
+    pub fn new_with_data(data: T) -> EncBox<T> {
+        let mut ret = EncBox {
+            _marker: PhantomData,
+            ptr: EncBox::alloc_backing_data(),
+        };
+        EncBox::copy_data_to_ptr(&mut ret.ptr, data);
+        ret
+    }
+}
+
+impl<T> Drop for EncBox<T> {
+    fn drop(&mut self) {
+        let layout = EncBox::<T>::get_data_layout();
+        unsafe {
+            dealloc(self.ptr.as_ptr() as *mut u8, layout);
         }
     }
 }
@@ -145,14 +177,12 @@ impl<T> Deref for EncBox<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        //&self.value
-        unimplemented!();
+        unsafe { self.ptr.as_ref() }
     }
 }
 
 impl<T> DerefMut for EncBox<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        //&mut self.value
-        unimplemented!();
+        unsafe { self.ptr.as_mut() }
     }
 }
