@@ -32,6 +32,7 @@ use std::ops::Deref;
 use std::ops::DerefMut;
 use std::ptr;
 use std::ptr::NonNull;
+use std::ptr::drop_in_place;
 use syn::ext::*;
 use syn::fold::*;
 use syn::parse::*;
@@ -148,6 +149,10 @@ impl<T> EncBox<T> {
         unsafe { ptr::write(dest.as_ptr(), src) };
     }
 
+    fn ratchet_underlying(&mut self) {
+        unimplemented!();
+    }
+
     pub fn new() -> EncBox<T> {
         EncBox {
             _marker: PhantomData,
@@ -168,6 +173,7 @@ impl<T> Drop for EncBox<T> {
     fn drop(&mut self) {
         let layout = EncBox::<T>::get_data_layout();
         unsafe {
+            drop_in_place(self.ptr.as_ptr());
             dealloc(self.ptr.as_ptr() as *mut u8, layout);
         }
     }
@@ -184,5 +190,43 @@ impl<T> Deref for EncBox<T> {
 impl<T> DerefMut for EncBox<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.ptr.as_mut() }
+    }
+}
+
+//TODO: I don't think this will work how I want
+//The deref trait returns a &Target, not a Target
+//So I'd effectively have to have a lifetime notification for an arbitrary reference
+//Which doesn't make sense when it's raw like that
+//I can store the reference to an underlying object, but would have no notification when things go
+//out of scope in order to ratchet keys
+//So I probably will have to concede my vision and just aim for a normal smart pointer approach
+//I can make it easy to use, with all the boilerplate
+//But I don't think I can get it to a truly transparent automated type replacement mechanism
+//Next best step will be emulating Mutex<T> or Rc<T> or what have you
+//Maybe call it EArc<T> or EncArc<T>, who knows
+struct EncBoxGuard<'a, T>
+where
+    T: Sized + 'a,
+{
+    encbox: &'a mut EncBox<T>,
+}
+
+impl<'a, T> Drop for EncBoxGuard<'a, T> {
+    fn drop(&mut self) {
+        self.encbox.ratchet_underlying();
+    }
+}
+
+impl<'a, T> Deref for EncBoxGuard<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { self.encbox.ptr.as_ref() }
+    }
+}
+
+impl<'a, T> DerefMut for EncBoxGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        unsafe { self.encbox.ptr.as_mut() }
     }
 }
