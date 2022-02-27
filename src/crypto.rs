@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 
 use aead;
-use aead::{Aead, AeadCore, AeadInPlace, Key, NewAead, Nonce, Tag};
+use aead::{Aead, AeadInPlace, Key, NewAead, Nonce, Tag};
 use blake2::Blake2b512;
 use chacha20poly1305;
 use chacha20poly1305::XChaCha20Poly1305;
@@ -15,14 +15,13 @@ use generic_array::typenum::U64;
 use generic_array::GenericArray;
 use hkdf::SimpleHkdf;
 use rand;
-use rand::prelude::*;
 use rand::rngs::OsRng;
+use rand::CryptoRng;
 use rand::RngCore;
 use std::alloc::alloc;
 use std::alloc::dealloc;
 use std::alloc::handle_alloc_error;
 use std::alloc::Layout;
-use std::convert::TryInto;
 use std::marker::PhantomData;
 use std::mem;
 use std::mem::size_of;
@@ -33,12 +32,8 @@ use std::ptr::drop_in_place;
 use std::ptr::NonNull;
 use typenum;
 use typenum::type_operators::IsEqual;
-use typenum::ToInt;
 use typenum::True;
-use typenum::UInt;
 use typenum::Unsigned;
-
-//TODO: Consolidate RNG into a "chosen" one to avoid mistakes
 
 struct CryptoCtx {
     tx_key: [u8; 32],
@@ -174,20 +169,17 @@ where
         }
     }
 
-    fn copy_data_to_ptr(dest: &mut NonNull<T>, src: T) {
-        unsafe { ptr::write(dest.as_ptr(), src) };
-    }
-
-    //TODO: Clean this up, I don't like how opaque it is
-    fn encrypt(&mut self) {
-        let keyed = Cipher::new(&self.key);
+    fn encrypt(
+        key: &Key<Cipher>,
+        nonce: &Nonce<Cipher>,
+        aad: &[u8],
+        contents: &NonNull<T>,
+    ) -> Tag<Cipher> {
+        let keyed = Cipher::new(key);
         let dest: &mut [u8] = unsafe {
-            std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
+            std::slice::from_raw_parts_mut(contents.as_ptr() as *mut u8, Self::ciphertext_size())
         };
-
-        self.tag = keyed
-            .encrypt_in_place_detached(&self.nonce, &usize::to_be_bytes(self.aad), dest)
-            .unwrap();
+        keyed.encrypt_in_place_detached(nonce, aad, dest).unwrap()
     }
 
     //TODO: Add checks to guarantee we are decrypted at this point
@@ -209,7 +201,12 @@ where
         Self::free_backing_data(self.ptr);
         self.ptr = newdata;
 
-        self.encrypt();
+        self.tag = Self::encrypt(
+            &self.key,
+            &self.nonce,
+            &usize::to_be_bytes(self.aad),
+            &self.ptr,
+        );
     }
 
     //Only failure is decryption related, which intentionally panics
@@ -238,10 +235,8 @@ where
             aad: size_of::<T>(),
         };
 
-        Self::copy_data_to_ptr(&mut ret.ptr, data);
-
-        ret.encrypt();
-
+        unsafe { std::ptr::write(ret.ptr.as_ptr(), data) };
+        ret.tag = Self::encrypt(&ret.key, &ret.nonce, &usize::to_be_bytes(ret.aad), &ret.ptr);
         ret
     }
 }

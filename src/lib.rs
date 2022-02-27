@@ -1,38 +1,22 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use aead;
-use aead::{Aead, Key, NewAead, Nonce};
 use chacha20poly1305;
 use chacha20poly1305::XChaCha20Poly1305;
 use digest;
 use digest::Digest;
-use generic_array;
-use generic_array::typenum::U24;
-use generic_array::typenum::U32;
-use generic_array::typenum::U64;
-use generic_array::GenericArray;
-use proc_macro2::Literal;
 use proc_macro2::Punct;
 use proc_macro2::Spacing;
-use proc_macro2::Span;
-use proc_macro2::TokenTree;
 use quote::*;
 use rand;
 use rand::prelude::*;
 use rand::rngs::OsRng;
-use rand::RngCore;
-use std::convert::TryInto;
 use syn::ext::*;
-use syn::fold::*;
 use syn::parse::*;
 use syn::spanned::Spanned;
 use syn::visit::*;
 use syn::visit_mut::*;
 use syn::*;
-use typenum;
-use typenum::type_operators::IsEqual;
-use typenum::True;
 
 //Needed for the quote memory encryption routines to resolve
 pub mod crypto;
