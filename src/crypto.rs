@@ -3,6 +3,7 @@
 
 use aead;
 use aead::{Aead, AeadCore, AeadInPlace, Key, NewAead, Nonce, Tag};
+use blake2::Blake2b512;
 use chacha20poly1305;
 use chacha20poly1305::XChaCha20Poly1305;
 use digest;
@@ -12,6 +13,7 @@ use generic_array::typenum::U24;
 use generic_array::typenum::U32;
 use generic_array::typenum::U64;
 use generic_array::GenericArray;
+use hkdf::SimpleHkdf;
 use rand;
 use rand::prelude::*;
 use rand::rngs::OsRng;
@@ -116,6 +118,8 @@ pub struct EncBox<T, Cipher>
 where
     T: Sized,
     Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
 {
     _marker: PhantomData<T>,
     /*
@@ -136,9 +140,14 @@ impl<T, Cipher> EncBox<T, Cipher>
 where
     T: Sized,
     Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
 {
+    fn ciphertext_size() -> usize {
+        mem::size_of::<T>() + Cipher::CiphertextOverhead::to_usize()
+    }
     fn get_data_layout() -> Layout {
-        let size = mem::size_of::<T>() + Cipher::CiphertextOverhead::to_usize();
+        let size = Self::ciphertext_size();
         let align = mem::align_of::<T>();
 
         debug_assert!(Layout::from_size_align(size, align).is_ok());
@@ -155,37 +164,82 @@ where
         }
     }
 
+    fn free_backing_data(ptr: NonNull<T>) {
+        let layout = Self::get_data_layout();
+        unsafe {
+            drop_in_place(ptr.as_ptr());
+            dealloc(ptr.as_ptr() as *mut u8, layout);
+        }
+    }
+
     fn copy_data_to_ptr(dest: &mut NonNull<T>, src: T) {
         unsafe { ptr::write(dest.as_ptr(), src) };
     }
 
+    //TODO: Clean this up, I don't like how opaque it is
+    fn encrypt(&mut self) {
+        let keyed = Cipher::new(&self.key);
+        let dest: &mut [u8] = unsafe {
+            std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
+        };
+
+        self.tag = keyed
+            .encrypt_in_place_detached(&self.nonce, &usize::to_be_bytes(self.aad), dest)
+            .unwrap();
+    }
+
+    //TODO: Add checks to guarantee we are decrypted at this point
     fn ratchet_underlying(&mut self) {
-        unimplemented!();
+        //Key is initially generated from CSPRNG, so no need to extract
+        //TODO: Make the HKDF Digest agnostic
+        let hk = SimpleHkdf::<Blake2b512>::from_prk(&self.key).unwrap();
+        hk.expand(b"EncBox Key Ratchet", &mut self.key).unwrap();
+
+        let newdata = Self::alloc_backing_data();
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                self.ptr.as_ptr(),
+                newdata.as_ptr(),
+                Self::ciphertext_size(),
+            );
+        }
+
+        Self::free_backing_data(self.ptr);
+        self.ptr = newdata;
+
+        self.encrypt();
     }
 
     //Only failure is decryption related, which intentionally panics
     pub fn decrypt(&mut self) -> EncBoxGuard<'_, T, Cipher> {
+        let keyed = Cipher::new(&self.key);
+        let dest: &mut [u8] = unsafe {
+            std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
+        };
+
+        keyed
+            .decrypt_in_place_detached(&self.nonce, &usize::to_be_bytes(self.aad), dest, &self.tag)
+            .unwrap();
         EncBoxGuard { encbox: self }
     }
 
+    //TODO: Optimize this
+    //TODO: Implement equivalent From<U> traits
     pub fn new(data: T) -> EncBox<T, Cipher> {
         let mut ret = EncBox {
             _marker: PhantomData,
             ptr: Self::alloc_backing_data(),
             key: Cipher::generate_key(OsRng),
+            //TODO: Generate nonces properly
             nonce: GenericArray::default(),
             tag: GenericArray::default(),
             aad: size_of::<T>(),
         };
 
-        //let keyed = Cipher::new(&ret.key);
-        //let dest: &mut [u8];
-
-        //ret.tag = keyed
-        //    .encrypt_in_place_detached(&ret.nonce, &usize::to_be_bytes(ret.aad), dest)
-        //    .unwrap();
-
         Self::copy_data_to_ptr(&mut ret.ptr, data);
+
+        ret.encrypt();
+
         ret
     }
 }
@@ -194,13 +248,11 @@ impl<T, Cipher> Drop for EncBox<T, Cipher>
 where
     T: Sized,
     Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
 {
     fn drop(&mut self) {
-        let layout = Self::get_data_layout();
-        unsafe {
-            drop_in_place(self.ptr.as_ptr());
-            dealloc(self.ptr.as_ptr() as *mut u8, layout);
-        }
+        Self::free_backing_data(self.ptr);
     }
 }
 
@@ -208,6 +260,8 @@ impl<T, Cipher> Deref for EncBox<T, Cipher>
 where
     T: Sized,
     Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
 {
     type Target = T;
 
@@ -220,27 +274,20 @@ impl<T, Cipher> DerefMut for EncBox<T, Cipher>
 where
     T: Sized,
     Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.ptr.as_mut() }
     }
 }
 
-//TODO: I don't think this will work how I want
-//The deref trait returns a &Target, not a Target
-//So I'd effectively have to have a lifetime notification for an arbitrary reference
-//Which doesn't make sense when it's raw like that
-//I can store the reference to an underlying object, but would have no notification when things go
-//out of scope in order to ratchet keys
-//So I probably will have to concede my vision and just aim for a normal smart pointer approach
-//I can make it easy to use, with all the boilerplate
-//But I don't think I can get it to a truly transparent automated type replacement mechanism
-//Next best step will be emulating Mutex<T> or Rc<T> or what have you
-//Maybe call it EArc<T> or EncArc<T>, who knows
 pub struct EncBoxGuard<'a, T, Cipher>
 where
     T: Sized + 'a,
     Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
 {
     encbox: &'a mut EncBox<T, Cipher>,
 }
@@ -249,6 +296,8 @@ impl<'a, T, Cipher> Drop for EncBoxGuard<'a, T, Cipher>
 where
     T: Sized,
     Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
 {
     fn drop(&mut self) {
         self.encbox.ratchet_underlying();
@@ -259,6 +308,8 @@ impl<'a, T, Cipher> Deref for EncBoxGuard<'a, T, Cipher>
 where
     T: Sized,
     Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
 {
     type Target = T;
 
@@ -271,6 +322,8 @@ impl<'a, T, Cipher> DerefMut for EncBoxGuard<'a, T, Cipher>
 where
     T: Sized,
     Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.encbox.ptr.as_mut() }

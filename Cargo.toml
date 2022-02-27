@@ -23,7 +23,8 @@ aead = { version = ">=0.4", features = ["alloc", "rand_core"]}
 aes-gcm = { version = ">=0.9", features = ["alloc"]}
 aes-gcm-siv = { version = ">=0.10", features = ["alloc"]}
 chacha20poly1305 = { version = ">=0.9", features = ["alloc"]}
-hkdf = ">=0.11"
+hkdf = "0.12.3"
+blake2 = "0.10.4"
 syn = { version = "1.0.85", features = ["full", "visit", "visit-mut", "fold", "extra-traits"] }
 quote = "1.0.14"
 proc-macro2 = "1.0.36"
