@@ -113,6 +113,8 @@ where
     output
 }
 
+//TODO: Add memory zeroing
+//TODO: Add memory protections (locking, RWX permissions, etc)
 #[derive(Debug, Clone, Hash)]
 pub struct EncBox<T, Cipher>
 where
@@ -198,8 +200,8 @@ where
         let newdata = Self::alloc_backing_data();
         unsafe {
             std::ptr::copy_nonoverlapping(
-                self.ptr.as_ptr(),
-                newdata.as_ptr(),
+                self.ptr.as_ptr() as *mut u8,
+                newdata.as_ptr() as *mut u8,
                 Self::ciphertext_size(),
             );
         }
