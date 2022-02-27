@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 
 use aead;
-use aead::{Aead, AeadInPlace, Key, NewAead, Nonce, Tag};
+use aead::{Aead, AeadCore, AeadInPlace, Key, NewAead, Nonce, Tag};
 use chacha20poly1305;
 use chacha20poly1305::XChaCha20Poly1305;
 use digest;
@@ -12,12 +12,6 @@ use generic_array::typenum::U24;
 use generic_array::typenum::U32;
 use generic_array::typenum::U64;
 use generic_array::GenericArray;
-use proc_macro2::Literal;
-use proc_macro2::Punct;
-use proc_macro2::Spacing;
-use proc_macro2::Span;
-use proc_macro2::TokenTree;
-use quote::*;
 use rand;
 use rand::prelude::*;
 use rand::rngs::OsRng;
@@ -28,23 +22,19 @@ use std::alloc::handle_alloc_error;
 use std::alloc::Layout;
 use std::convert::TryInto;
 use std::marker::PhantomData;
+use std::mem;
+use std::mem::size_of;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::ptr;
 use std::ptr::drop_in_place;
 use std::ptr::NonNull;
-use syn::ext::*;
-use syn::fold::*;
-use syn::parse::*;
-use syn::spanned::Spanned;
-use syn::visit::*;
-use syn::visit_mut::*;
-use syn::*;
 use typenum;
 use typenum::type_operators::IsEqual;
+use typenum::ToInt;
 use typenum::True;
-//TODO: Is there a better way to handle this?
-use crate as r2d2;
+use typenum::UInt;
+use typenum::Unsigned;
 
 //TODO: Consolidate RNG into a "chosen" one to avoid mistakes
 
@@ -128,10 +118,18 @@ where
     Cipher: NewAead + AeadInPlace,
 {
     _marker: PhantomData<T>,
+    /*
+     * Can't use an array because of const_generics
+     * Can't use GenericArray because of const_convert preventing size_of->UInt conversion
+     * Can't use Box<T> because of CipherTextOverhead
+     * Therefore has to be a pointer
+     */
     ptr: NonNull<T>,
     key: Key<Cipher>,
     nonce: Nonce<Cipher>,
     tag: Tag<Cipher>,
+    //Currently holds the size of T
+    aad: usize,
 }
 
 impl<T, Cipher> EncBox<T, Cipher>
@@ -140,10 +138,14 @@ where
     Cipher: NewAead + AeadInPlace,
 {
     fn get_data_layout() -> Layout {
-        Layout::new::<T>()
+        let size = mem::size_of::<T>() + Cipher::CiphertextOverhead::to_usize();
+        let align = mem::align_of::<T>();
+
+        debug_assert!(Layout::from_size_align(size, align).is_ok());
+        Layout::from_size_align(size, align).unwrap()
     }
     fn alloc_backing_data() -> NonNull<T> {
-        let layout = EncBox::<T, Cipher>::get_data_layout();
+        let layout = Self::get_data_layout();
         let data = NonNull::new(unsafe { alloc(layout) } as *mut T);
 
         if let Some(p) = data {
@@ -169,12 +171,21 @@ where
     pub fn new(data: T) -> EncBox<T, Cipher> {
         let mut ret = EncBox {
             _marker: PhantomData,
-            ptr: EncBox::<T, Cipher>::alloc_backing_data(),
+            ptr: Self::alloc_backing_data(),
             key: Cipher::generate_key(OsRng),
             nonce: GenericArray::default(),
             tag: GenericArray::default(),
+            aad: size_of::<T>(),
         };
-        EncBox::<T, Cipher>::copy_data_to_ptr(&mut ret.ptr, data);
+
+        //let keyed = Cipher::new(&ret.key);
+        //let dest: &mut [u8];
+
+        //ret.tag = keyed
+        //    .encrypt_in_place_detached(&ret.nonce, &usize::to_be_bytes(ret.aad), dest)
+        //    .unwrap();
+
+        Self::copy_data_to_ptr(&mut ret.ptr, data);
         ret
     }
 }
@@ -185,7 +196,7 @@ where
     Cipher: NewAead + AeadInPlace,
 {
     fn drop(&mut self) {
-        let layout = EncBox::<T, Cipher>::get_data_layout();
+        let layout = Self::get_data_layout();
         unsafe {
             drop_in_place(self.ptr.as_ptr());
             dealloc(self.ptr.as_ptr() as *mut u8, layout);
