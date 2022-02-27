@@ -2,7 +2,7 @@
 #![allow(unused_imports)]
 
 use aead;
-use aead::{Aead, Key, NewAead, Nonce};
+use aead::{Aead, AeadInPlace, Key, NewAead, Nonce, Tag};
 use chacha20poly1305;
 use chacha20poly1305::XChaCha20Poly1305;
 use digest;
@@ -31,8 +31,8 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::ptr;
-use std::ptr::NonNull;
 use std::ptr::drop_in_place;
+use std::ptr::NonNull;
 use syn::ext::*;
 use syn::fold::*;
 use syn::parse::*;
@@ -122,20 +122,28 @@ where
 }
 
 #[derive(Debug, Clone, Hash)]
-pub struct EncBox<T>
+pub struct EncBox<T, Cipher>
 where
     T: Sized,
+    Cipher: NewAead + AeadInPlace,
 {
     _marker: PhantomData<T>,
     ptr: NonNull<T>,
+    key: Key<Cipher>,
+    nonce: Nonce<Cipher>,
+    tag: Tag<Cipher>,
 }
 
-impl<T> EncBox<T> {
+impl<T, Cipher> EncBox<T, Cipher>
+where
+    T: Sized,
+    Cipher: NewAead + AeadInPlace,
+{
     fn get_data_layout() -> Layout {
         Layout::new::<T>()
     }
     fn alloc_backing_data() -> NonNull<T> {
-        let layout = EncBox::<T>::get_data_layout();
+        let layout = EncBox::<T, Cipher>::get_data_layout();
         let data = NonNull::new(unsafe { alloc(layout) } as *mut T);
 
         if let Some(p) = data {
@@ -153,25 +161,31 @@ impl<T> EncBox<T> {
         unimplemented!();
     }
 
-    pub fn new() -> EncBox<T> {
-        EncBox {
-            _marker: PhantomData,
-            ptr: NonNull::dangling(),
-        }
+    //Only failure is decryption related, which intentionally panics
+    pub fn decrypt(&mut self) -> EncBoxGuard<'_, T, Cipher> {
+        EncBoxGuard { encbox: self }
     }
-    pub fn new_with_data(data: T) -> EncBox<T> {
+
+    pub fn new(data: T) -> EncBox<T, Cipher> {
         let mut ret = EncBox {
             _marker: PhantomData,
-            ptr: EncBox::alloc_backing_data(),
+            ptr: EncBox::<T, Cipher>::alloc_backing_data(),
+            key: Cipher::generate_key(OsRng),
+            nonce: GenericArray::default(),
+            tag: GenericArray::default(),
         };
-        EncBox::copy_data_to_ptr(&mut ret.ptr, data);
+        EncBox::<T, Cipher>::copy_data_to_ptr(&mut ret.ptr, data);
         ret
     }
 }
 
-impl<T> Drop for EncBox<T> {
+impl<T, Cipher> Drop for EncBox<T, Cipher>
+where
+    T: Sized,
+    Cipher: NewAead + AeadInPlace,
+{
     fn drop(&mut self) {
-        let layout = EncBox::<T>::get_data_layout();
+        let layout = EncBox::<T, Cipher>::get_data_layout();
         unsafe {
             drop_in_place(self.ptr.as_ptr());
             dealloc(self.ptr.as_ptr() as *mut u8, layout);
@@ -179,7 +193,11 @@ impl<T> Drop for EncBox<T> {
     }
 }
 
-impl<T> Deref for EncBox<T> {
+impl<T, Cipher> Deref for EncBox<T, Cipher>
+where
+    T: Sized,
+    Cipher: NewAead + AeadInPlace,
+{
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -187,7 +205,11 @@ impl<T> Deref for EncBox<T> {
     }
 }
 
-impl<T> DerefMut for EncBox<T> {
+impl<T, Cipher> DerefMut for EncBox<T, Cipher>
+where
+    T: Sized,
+    Cipher: NewAead + AeadInPlace,
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.ptr.as_mut() }
     }
@@ -204,20 +226,29 @@ impl<T> DerefMut for EncBox<T> {
 //But I don't think I can get it to a truly transparent automated type replacement mechanism
 //Next best step will be emulating Mutex<T> or Rc<T> or what have you
 //Maybe call it EArc<T> or EncArc<T>, who knows
-struct EncBoxGuard<'a, T>
+pub struct EncBoxGuard<'a, T, Cipher>
 where
     T: Sized + 'a,
+    Cipher: NewAead + AeadInPlace,
 {
-    encbox: &'a mut EncBox<T>,
+    encbox: &'a mut EncBox<T, Cipher>,
 }
 
-impl<'a, T> Drop for EncBoxGuard<'a, T> {
+impl<'a, T, Cipher> Drop for EncBoxGuard<'a, T, Cipher>
+where
+    T: Sized,
+    Cipher: NewAead + AeadInPlace,
+{
     fn drop(&mut self) {
         self.encbox.ratchet_underlying();
     }
 }
 
-impl<'a, T> Deref for EncBoxGuard<'a, T> {
+impl<'a, T, Cipher> Deref for EncBoxGuard<'a, T, Cipher>
+where
+    T: Sized,
+    Cipher: NewAead + AeadInPlace,
+{
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -225,7 +256,11 @@ impl<'a, T> Deref for EncBoxGuard<'a, T> {
     }
 }
 
-impl<'a, T> DerefMut for EncBoxGuard<'a, T> {
+impl<'a, T, Cipher> DerefMut for EncBoxGuard<'a, T, Cipher>
+where
+    T: Sized,
+    Cipher: NewAead + AeadInPlace,
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.encbox.ptr.as_mut() }
     }
