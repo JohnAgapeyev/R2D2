@@ -223,7 +223,6 @@ where
     }
 
     //TODO: Optimize this
-    //TODO: Implement equivalent From<U> traits
     pub fn new(data: T) -> EncBox<T, Cipher> {
         let mut ret = EncBox {
             _marker: PhantomData,
@@ -276,6 +275,30 @@ where
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl<T, Cipher> From<T> for EncBox<T, Cipher>
+where
+    T: Sized,
+    Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
+{
+    fn from(data: T) -> Self {
+        EncBox::<T, Cipher>::new(data)
+    }
+}
+
+impl<T, Cipher> From<&T> for EncBox<T, Cipher>
+where
+    T: Sized + ToOwned<Owned = T>,
+    Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
+{
+    fn from(data: &T) -> Self {
+        EncBox::<T, Cipher>::new(data.to_owned())
     }
 }
 
