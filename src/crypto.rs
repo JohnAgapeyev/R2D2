@@ -161,14 +161,6 @@ where
         }
     }
 
-    fn free_backing_data(ptr: NonNull<T>) {
-        let layout = Self::get_data_layout();
-        unsafe {
-            drop_in_place(ptr.as_ptr());
-            dealloc(ptr.as_ptr() as *mut u8, layout);
-        }
-    }
-
     fn encrypt(
         key: &Key<Cipher>,
         nonce: &Nonce<Cipher>,
@@ -184,34 +176,12 @@ where
 
     //TODO: Add checks to guarantee we are decrypted at this point
     fn ratchet_underlying(&mut self) {
-        //No HKDF since we don't want any relationship between ciphertexts
-        self.key = Cipher::generate_key(OsRng);
-
-        //TODO: This can probably be reduced to a smarter assignment API for a new EncBox, rather
-        //than this whole mess
-        let newdata = Self::alloc_backing_data();
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                self.ptr.as_ptr() as *mut u8,
-                newdata.as_ptr() as *mut u8,
-                Self::ciphertext_size(),
-            );
-        }
-
-        let layout = Self::get_data_layout();
-        unsafe {
-            drop_in_place(self.ptr.as_ptr());
-            dealloc(self.ptr.as_ptr() as *mut u8, layout);
-        }
-
-        self.ptr = newdata;
-
-        self.tag = Self::encrypt(
-            &self.key,
-            &self.nonce,
-            &usize::to_be_bytes(self.aad),
-            &self.ptr,
-        );
+        let src_slice: &[u8] = unsafe {
+            std::slice::from_raw_parts(self.ptr.as_ptr() as *const u8, Self::ciphertext_size())
+        };
+        let newbox = Self::new_from_ptr(src_slice);
+        //The old data will have its destructor called, which will zeroize the underlying
+        *self = newbox;
     }
 
     //Only failure is decryption related, which intentionally panics
@@ -227,8 +197,9 @@ where
         EncBoxGuard { encbox: self }
     }
 
-    //TODO: Optimize this
-    pub fn new(data: T) -> EncBox<T, Cipher> {
+    //Grab a slice since we want to use the input data, and need a slice len to guarantee safe
+    //reading
+    fn new_from_ptr(data: &[u8]) -> EncBox<T, Cipher> {
         let mut ret = EncBox {
             _marker: PhantomData,
             ptr: Self::alloc_backing_data(),
@@ -239,9 +210,23 @@ where
             aad: size_of::<T>(),
         };
 
-        unsafe { std::ptr::write(ret.ptr.as_ptr(), data) };
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                ret.ptr.as_ptr() as *mut u8,
+                data.as_ptr() as *mut u8,
+                data.len(),
+            );
+        }
+
         ret.tag = Self::encrypt(&ret.key, &ret.nonce, &usize::to_be_bytes(ret.aad), &ret.ptr);
         ret
+    }
+
+    pub fn new(data: T) -> EncBox<T, Cipher> {
+        let src_slice: &[u8] = unsafe {
+            std::slice::from_raw_parts(std::ptr::addr_of!(data) as *const u8, size_of::<T>())
+        };
+        Self::new_from_ptr(src_slice)
     }
 }
 
