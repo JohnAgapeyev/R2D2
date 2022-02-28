@@ -188,6 +188,16 @@ where
         EncBoxGuard { encbox: self }
     }
 
+    fn generate_nonce() -> Nonce<Cipher> {
+        /*
+         * We always ratchet when re-encrypting, which generates a new key+nonce combo, so randomly
+         * generating them is fine, neither key nor nonce will be reused
+         */
+        let mut nonce: Nonce<Cipher> = GenericArray::default();
+        OsRng.fill_bytes(nonce.as_mut_slice());
+        nonce
+    }
+
     //Grab a slice since we want to use the input data, and need a slice len to guarantee safe
     //reading
     fn new_from_ptr(data: &[u8]) -> EncBox<T, Cipher> {
@@ -195,8 +205,7 @@ where
             _marker: PhantomData,
             ptr: Self::alloc_backing_data(),
             key: Cipher::generate_key(OsRng),
-            //TODO: Generate nonces properly
-            nonce: GenericArray::default(),
+            nonce: Self::generate_nonce(),
             tag: GenericArray::default(),
             aad: size_of::<T>(),
         };
