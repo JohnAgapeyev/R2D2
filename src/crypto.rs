@@ -36,6 +36,7 @@ use typenum::True;
 use typenum::Unsigned;
 use zeroize::Zeroize;
 
+#[derive(Default)]
 struct CryptoCtx {
     tx_key: [u8; 32],
     rx_key: [u8; 32],
@@ -43,6 +44,7 @@ struct CryptoCtx {
     rx_counter: u64,
 }
 
+#[derive(Debug, Default, Hash, PartialEq)]
 pub struct MemoryEncryptionCtx<Cipher>
 where
     Cipher: NewAead,
@@ -54,17 +56,6 @@ where
     pub key: Key<Cipher>,
     pub nonce: Nonce<Cipher>,
     pub ciphertext: Vec<u8>,
-}
-
-impl Default for CryptoCtx {
-    fn default() -> Self {
-        CryptoCtx {
-            tx_key: [0u8; 32],
-            rx_key: [0u8; 32],
-            tx_counter: 0,
-            rx_counter: 0,
-        }
-    }
 }
 
 pub fn encrypt_memory<Cipher>(data: &[u8]) -> MemoryEncryptionCtx<Cipher>
