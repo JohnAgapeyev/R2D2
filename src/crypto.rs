@@ -34,6 +34,7 @@ use typenum;
 use typenum::type_operators::IsEqual;
 use typenum::True;
 use typenum::Unsigned;
+use zeroize::Zeroize;
 
 struct CryptoCtx {
     tx_key: [u8; 32],
@@ -108,7 +109,6 @@ where
     output
 }
 
-//TODO: Add memory zeroing
 //TODO: Add memory protections (locking, RWX permissions, etc)
 #[derive(Debug, Clone, Hash)]
 pub struct EncBox<T, Cipher>
@@ -189,6 +189,8 @@ where
         let hk = SimpleHkdf::<Blake2b512>::from_prk(&self.key).unwrap();
         hk.expand(b"EncBox Key Ratchet", &mut self.key).unwrap();
 
+        //TODO: This can probably be reduced to a smarter assignment API for a new EncBox, rather
+        //than this whole mess
         let newdata = Self::alloc_backing_data();
         unsafe {
             std::ptr::copy_nonoverlapping(
@@ -198,7 +200,12 @@ where
             );
         }
 
-        Self::free_backing_data(self.ptr);
+        let layout = Self::get_data_layout();
+        unsafe {
+            drop_in_place(self.ptr.as_ptr());
+            dealloc(self.ptr.as_ptr() as *mut u8, layout);
+        }
+
         self.ptr = newdata;
 
         self.tag = Self::encrypt(
@@ -248,7 +255,14 @@ where
     Cipher::KeySize: IsEqual<U32, Output = True>,
 {
     fn drop(&mut self) {
-        Self::free_backing_data(self.ptr);
+        let layout = Self::get_data_layout();
+        unsafe {
+            drop_in_place(self.ptr.as_ptr());
+        }
+        self.zeroize();
+        unsafe {
+            dealloc(self.ptr.as_ptr() as *mut u8, layout);
+        }
     }
 }
 
@@ -299,6 +313,27 @@ where
 {
     fn from(data: &T) -> Self {
         EncBox::<T, Cipher>::new(data.to_owned())
+    }
+}
+
+impl<T, Cipher> Zeroize for EncBox<T, Cipher>
+where
+    T: Sized,
+    Cipher: NewAead + AeadInPlace,
+    //Enforce 256 bit keys
+    Cipher::KeySize: IsEqual<U32, Output = True>,
+{
+    fn zeroize(&mut self) {
+        //PhantomData is zero sized, so ignore it
+        self.key.zeroize();
+        self.nonce.zeroize();
+        self.tag.zeroize();
+        self.aad.zeroize();
+
+        let backing: &mut [u8] = unsafe {
+            std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
+        };
+        backing.zeroize();
     }
 }
 
