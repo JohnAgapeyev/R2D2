@@ -101,7 +101,7 @@ where
 }
 
 //TODO: Add memory protections (locking, RWX permissions, etc)
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq)]
 pub struct EncBox<T, Cipher>
 where
     T: Sized,
@@ -239,12 +239,14 @@ where
 {
     fn drop(&mut self) {
         let layout = Self::get_data_layout();
+        let _ = self.decrypt();
+        let ptr: *mut u8 = self.ptr.as_ptr() as *mut u8;
         unsafe {
-            drop_in_place(self.ptr.as_ptr());
+            drop_in_place(ptr as *mut T);
         }
         self.zeroize();
         unsafe {
-            dealloc(self.ptr.as_ptr() as *mut u8, layout);
+            dealloc(ptr, layout);
         }
     }
 }
@@ -320,6 +322,7 @@ where
     }
 }
 
+#[derive(Debug, Hash, PartialEq)]
 pub struct EncBoxGuard<'a, T, Cipher>
 where
     T: Sized + 'a,
@@ -365,5 +368,26 @@ where
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.encbox.ptr.as_mut() }
+    }
+}
+
+#[cfg(test)]
+mod enc_box_tests {
+    use crate::EncBox;
+    use crate::XChaCha20Poly1305;
+    #[test]
+    fn sanity_check() {
+        let basic: String = "FizzBuzz".to_string();
+        let mut enc: EncBox<String, XChaCha20Poly1305> = EncBox::from(&basic);
+
+        //eprintln!("What's in the box {enc:#?}");
+
+        let contents = enc.decrypt();
+
+        //eprintln!("What's in the decrypted box {contents:#?}");
+        //let mut modified: EncBox<String, XChaCha20Poly1305> =
+            //EncBox::from(enc.decrypt().replace("zz", "yy"));
+        assert_eq!(basic, *contents);
+        //assert_eq!(*modified.decrypt(), "FiyyBuyy");
     }
 }
