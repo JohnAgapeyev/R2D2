@@ -184,10 +184,8 @@ where
 
     //TODO: Add checks to guarantee we are decrypted at this point
     fn ratchet_underlying(&mut self) {
-        //Key is initially generated from CSPRNG, so no need to extract
-        //TODO: Make the HKDF Digest agnostic
-        let hk = SimpleHkdf::<Blake2b512>::from_prk(&self.key).unwrap();
-        hk.expand(b"EncBox Key Ratchet", &mut self.key).unwrap();
+        //No HKDF since we don't want any relationship between ciphertexts
+        self.key = Cipher::generate_key(OsRng);
 
         //TODO: This can probably be reduced to a smarter assignment API for a new EncBox, rather
         //than this whole mess
