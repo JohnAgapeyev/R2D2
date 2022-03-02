@@ -28,6 +28,7 @@ use std::fmt::*;
 use std::marker::PhantomData;
 use std::mem;
 use std::mem::size_of;
+use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::ptr;
@@ -126,7 +127,7 @@ where
      * Can't use Box<T> because of CipherTextOverhead
      * Therefore has to be a pointer
      */
-    data: Box<T>,
+    data: ManuallyDrop<Box<T>>,
     key: Key<Cipher>,
     nonce: Nonce<Cipher>,
     tag: Tag<Cipher>,
@@ -145,7 +146,7 @@ where
 {
     fn ratchet_underlying(&mut self) {
         debug_assert!(self.state == EncBoxState::Decrypted);
-        *self = Self::from(&*self.data);
+        *self = Self::from(&**self.data);
     }
 
     //Only failure is decryption related, which intentionally panics
@@ -153,7 +154,7 @@ where
         let keyed = Cipher::new(&self.key);
         let dest: &mut [u8] = unsafe {
             std::slice::from_raw_parts_mut(
-                std::ptr::addr_of_mut!(*self.data) as *mut u8,
+                std::ptr::addr_of_mut!(**self.data) as *mut u8,
                 size_of::<T>(),
             )
         };
@@ -183,7 +184,7 @@ where
     pub fn new(data: T) -> EncBox<T, Cipher> {
         let mut ret = EncBox {
             _marker: PhantomData,
-            data: Box::new(data),
+            data: ManuallyDrop::new(Box::new(data)),
             key: Cipher::generate_key(OsRng),
             nonce: Self::generate_nonce(),
             tag: GenericArray::default(),
@@ -192,7 +193,7 @@ where
         };
         let dest: &mut [u8] = unsafe {
             std::slice::from_raw_parts_mut(
-                std::ptr::addr_of_mut!(*ret.data) as *mut u8,
+                std::ptr::addr_of_mut!(**ret.data) as *mut u8,
                 size_of::<T>(),
             )
         };
@@ -217,7 +218,33 @@ where
         if self.state == EncBoxState::Encrypted {
             self.decrypt_underlying();
         }
-        self.zeroize();
+        //Zero out the underlying data
+        self.key.zeroize();
+        self.nonce.zeroize();
+        self.tag.zeroize();
+        self.aad.zeroize();
+
+        /*
+         * SAFETY: This is necessary to zero out the contents of the data pointer effectively
+         * Box::zeroize doesn't work when T isn't Default+Copy
+         * If we zeroize the underlying bytes manually, it leaks (or worse!) due to our drop being
+         * called prior to actual member drop
+         */
+        unsafe {
+            //Needed to work around mutable reference preventing moving data in directly
+            let raw_data = ManuallyDrop::take(&mut self.data);
+            //Grab the raw pointer out of the box
+            let data_ptr = Box::into_raw(raw_data);
+            //Treat the raw pointer as a u8 slice we can zero
+            let byte_data_slice: &mut [u8] =
+                std::slice::from_raw_parts_mut(data_ptr as *mut u8, size_of::<T>());
+            //Call the destructor for the box
+            ptr::drop_in_place(data_ptr);
+            //Zero out the data
+            byte_data_slice.zeroize();
+            //Free the underlying
+            dealloc(data_ptr as *mut u8, Layout::new::<T>());
+        }
     }
 }
 
@@ -274,37 +301,6 @@ where
 {
     fn from(data: &T) -> Self {
         EncBox::<T, Cipher>::new(data.to_owned())
-    }
-}
-
-impl<T, Cipher> Zeroize for EncBox<T, Cipher>
-where
-    T: Sized + ToOwned<Owned = T>,
-    Cipher: NewAead + AeadInPlace,
-    //Enforce 256 bit keys
-    Cipher::KeySize: IsEqual<U32, Output = True>,
-    Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
-{
-    fn zeroize(&mut self) {
-        //PhantomData is zero sized, so ignore it
-        self.key.zeroize();
-        self.nonce.zeroize();
-        self.tag.zeroize();
-        self.aad.zeroize();
-        //TODO: Basic zeroing here causes a memory leak of T due to running prior to drop call
-        //self.data.zeroize();
-
-        //let dest: &mut [u8] = unsafe {
-        //    std::slice::from_raw_parts_mut(
-        //        std::ptr::addr_of_mut!(*self.data) as *mut u8,
-        //        size_of::<T>(),
-        //    )
-        //};
-        //dest.zeroize();
-        //let backing: &mut [u8] = unsafe {
-        //    std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
-        //};
-        //backing.zeroize();
     }
 }
 
