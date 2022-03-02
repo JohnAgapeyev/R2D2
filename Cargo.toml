@@ -14,7 +14,7 @@ publish = false
 #libc = "0.2"
 
 [dependencies]
-zeroize = "1.4"
+zeroize = { version = "1.4.3", features = ["alloc", "zeroize_derive"]}
 rand = { version = "0.8", features = ["getrandom", "std"]}
 digest = { version = "0.9", features = ["std"]}
 generic-array = "0.14"

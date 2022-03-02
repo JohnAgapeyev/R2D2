@@ -103,6 +103,12 @@ where
     output
 }
 
+#[derive(Clone, Copy, Debug, Hash, PartialEq)]
+enum EncBoxState {
+    Decrypted,
+    Encrypted,
+}
+
 //TODO: Add memory protections (locking, RWX permissions, etc)
 #[derive(Clone, Hash, PartialEq)]
 pub struct EncBox<T, Cipher>
@@ -126,6 +132,7 @@ where
     tag: Tag<Cipher>,
     //Currently holds the size of T
     aad: usize,
+    state: EncBoxState,
 }
 
 impl<T, Cipher> EncBox<T, Cipher>
@@ -136,81 +143,30 @@ where
     Cipher::KeySize: IsEqual<U32, Output = True>,
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
-    fn ciphertext_size() -> usize {
-        //mem::size_of::<T>() + Cipher::CiphertextOverhead::to_usize()
-        mem::size_of::<T>()
-    }
-    fn get_data_layout() -> Layout {
-        let size = Self::ciphertext_size();
-        let align = mem::align_of::<T>();
-
-        debug_assert!(Layout::from_size_align(size, align).is_ok());
-        Layout::from_size_align(size, align).unwrap()
-    }
-    fn alloc_backing_data() -> NonNull<T> {
-        let layout = Self::get_data_layout();
-        let data = NonNull::new(unsafe { alloc(layout) } as *mut T);
-
-        if let Some(p) = data {
-            return p;
-        } else {
-            handle_alloc_error(layout);
-        }
-    }
-
-    fn encrypt(
-        key: &Key<Cipher>,
-        nonce: &Nonce<Cipher>,
-        aad: &[u8],
-        contents: &mut [u8],
-    ) -> Tag<Cipher> {
-        let keyed = Cipher::new(key);
-        eprintln!("Encryption Key: {key:#?}\nNonce: {nonce:#?}\naad: {aad:#?}");
-        //let dest: &mut [u8] = contents as &mut [u8];
-        //keyed.encrypt_in_place_detached(nonce, aad, dest).unwrap()
-        let tag = keyed.encrypt_in_place_detached(nonce, aad, contents).unwrap();
-        eprintln!("Tag: {tag:#?}");
-        eprintln!("Ciphertext: {contents:#?}");
-        tag
-    }
-
-    //TODO: Add checks to guarantee we are decrypted at this point
     fn ratchet_underlying(&mut self) {
-        //TODO: Need to rethink, due to EncBoxGuard dropping first, this will leave the data
-        //encrypted when attempting to drop, so likely need some drop logic to counteract
-        let src_data = &*self.data;
-        *self = Self::from(src_data);
-        //The old data will have its destructor called, which will zeroize the underlying
-        //*self = newbox;
-        //self.ptr = newbox.ptr.clone();
-        //self.key = newbox.key.clone();
-        //self.nonce = newbox.nonce.clone();
-        //self.tag = newbox.tag.clone();
-        //self.aad = newbox.aad.clone();
+        debug_assert!(self.state == EncBoxState::Decrypted);
+        *self = Self::from(&*self.data);
     }
 
     //Only failure is decryption related, which intentionally panics
-    pub fn decrypt(&mut self) -> EncBoxGuard<'_, T, Cipher> {
+    fn decrypt_underlying(&mut self) {
         let keyed = Cipher::new(&self.key);
         let dest: &mut [u8] = unsafe {
             std::slice::from_raw_parts_mut(
                 std::ptr::addr_of_mut!(*self.data) as *mut u8,
-                Self::ciphertext_size(),
+                size_of::<T>(),
             )
         };
-
-        eprintln!(
-            "Decryption Key: {:#?}\nNonce: {:#?}\naad: {:#?}\nTag: {:#?}",
-            &self.key,
-            &self.nonce,
-            &usize::to_be_bytes(self.aad),
-            &self.tag
-        );
-        eprintln!("Ciphertext: {dest:#?}");
 
         keyed
             .decrypt_in_place_detached(&self.nonce, &usize::to_be_bytes(self.aad), dest, &self.tag)
             .unwrap();
+        self.state = EncBoxState::Decrypted;
+    }
+
+    pub fn decrypt(&mut self) -> EncBoxGuard<'_, T, Cipher> {
+        debug_assert!(self.state == EncBoxState::Encrypted);
+        self.decrypt_underlying();
         EncBoxGuard { encbox: self }
     }
 
@@ -232,14 +188,19 @@ where
             nonce: Self::generate_nonce(),
             tag: GenericArray::default(),
             aad: size_of::<T>(),
+            state: EncBoxState::Decrypted,
         };
         let dest: &mut [u8] = unsafe {
             std::slice::from_raw_parts_mut(
                 std::ptr::addr_of_mut!(*ret.data) as *mut u8,
-                Self::ciphertext_size(),
+                size_of::<T>(),
             )
         };
-        ret.tag = Self::encrypt(&ret.key, &ret.nonce, &usize::to_be_bytes(ret.aad), dest);
+        let keyed = Cipher::new(&ret.key);
+        ret.tag = keyed
+            .encrypt_in_place_detached(&ret.nonce, &usize::to_be_bytes(ret.aad), dest)
+            .unwrap();
+        ret.state = EncBoxState::Encrypted;
         ret
     }
 }
@@ -253,18 +214,10 @@ where
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     fn drop(&mut self) {
-        //eprintln!("Being dropped");
-        //println!("Being dropped");
-        //let layout = Self::get_data_layout();
-        ////let _ = self.decrypt();
-        //let ptr: *mut u8 = self.ptr.as_ptr() as *mut u8;
-        //unsafe {
-        //    drop_in_place(ptr as *mut T);
-        //}
-        //////self.zeroize();
-        ////unsafe {
-        ////    dealloc(ptr, layout);
-        ////}
+        if self.state == EncBoxState::Encrypted {
+            self.decrypt_underlying();
+        }
+        self.zeroize();
     }
 }
 
@@ -279,7 +232,8 @@ where
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { self.data.as_ref() }
+        debug_assert!(self.state == EncBoxState::Decrypted);
+        self.data.as_ref()
     }
 }
 
@@ -292,7 +246,8 @@ where
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.data.as_mut() }
+        debug_assert!(self.state == EncBoxState::Decrypted);
+        self.data.as_mut()
     }
 }
 
@@ -336,7 +291,16 @@ where
         self.nonce.zeroize();
         self.tag.zeroize();
         self.aad.zeroize();
+        //TODO: Basic zeroing here causes a memory leak of T due to running prior to drop call
+        //self.data.zeroize();
 
+        //let dest: &mut [u8] = unsafe {
+        //    std::slice::from_raw_parts_mut(
+        //        std::ptr::addr_of_mut!(*self.data) as *mut u8,
+        //        size_of::<T>(),
+        //    )
+        //};
+        //dest.zeroize();
         //let backing: &mut [u8] = unsafe {
         //    std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
         //};
@@ -363,6 +327,7 @@ where
             .field("tag", &self.tag)
             .field("aad", &self.aad)
             //.field("data", &self.data)
+            .field("state", &self.state)
             .finish()
     }
 }
@@ -388,6 +353,7 @@ where
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     fn drop(&mut self) {
+        debug_assert!(self.encbox.state == EncBoxState::Decrypted);
         self.encbox.ratchet_underlying();
     }
 }
@@ -403,7 +369,8 @@ where
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { self.encbox.data.as_ref() }
+        debug_assert!(self.encbox.state == EncBoxState::Decrypted);
+        self.encbox.data.as_ref()
     }
 }
 
@@ -416,7 +383,8 @@ where
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.encbox.data.as_mut() }
+        debug_assert!(self.encbox.state == EncBoxState::Decrypted);
+        self.encbox.data.as_mut()
     }
 }
 
@@ -442,17 +410,11 @@ mod enc_box_tests {
     #[test]
     fn sanity_check() {
         let basic: String = "FizzBuzz".to_string();
-        //let mut enc: EncBox<String, XChaCha20Poly1305> = EncBox::from(&basic);
-        let mut enc: EncBox<String, XChaCha20Poly1305> = EncBox::from(basic.clone());
-
-        eprintln!("What's in the box {enc:?}");
-
+        let mut enc: EncBox<String, XChaCha20Poly1305> = EncBox::from(&basic);
         let contents = enc.decrypt();
-
-        eprintln!("What's in the decrypted box {contents:#?}");
-        //let mut modified: EncBox<String, XChaCha20Poly1305> =
-        //EncBox::from(enc.decrypt().replace("zz", "yy"));
-        //assert_eq!(basic, *contents);
-        //assert_eq!(*modified.decrypt(), "FiyyBuyy");
+        let mut modified: EncBox<String, XChaCha20Poly1305> =
+            EncBox::from(contents.replace("zz", "yy"));
+        assert_eq!(basic, *contents);
+        assert_eq!(*modified.decrypt(), "FiyyBuyy");
     }
 }
