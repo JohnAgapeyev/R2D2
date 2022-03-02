@@ -118,14 +118,16 @@ where
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
+    //We assume no excess bytes in ciphertext, so Box<T> can hold the encrypted data, don't need to
+    //allocate extra data or handle that unsafe mess
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     _marker: PhantomData<T>,
     /*
      * Can't use an array because of const_generics
      * Can't use GenericArray because of const_convert preventing size_of->UInt conversion
-     * Can't use Box<T> because of CipherTextOverhead
-     * Therefore has to be a pointer
+     * Box<T> only works due to constraint that CiphertextOverhead == 0
+     * ManuallyDrop<Box<T>> is to inhibit the box drop so we can manually drop it with memory zeroing
      */
     data: ManuallyDrop<Box<T>>,
     key: Key<Cipher>,
