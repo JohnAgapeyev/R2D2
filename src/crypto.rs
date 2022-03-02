@@ -107,7 +107,7 @@ where
 #[derive(Clone, Hash, PartialEq)]
 pub struct EncBox<T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
@@ -120,7 +120,7 @@ where
      * Can't use Box<T> because of CipherTextOverhead
      * Therefore has to be a pointer
      */
-    ptr: NonNull<T>,
+    data: Box<T>,
     key: Key<Cipher>,
     nonce: Nonce<Cipher>,
     tag: Tag<Cipher>,
@@ -130,14 +130,15 @@ where
 
 impl<T, Cipher> EncBox<T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     fn ciphertext_size() -> usize {
-        mem::size_of::<T>() + Cipher::CiphertextOverhead::to_usize()
+        //mem::size_of::<T>() + Cipher::CiphertextOverhead::to_usize()
+        mem::size_of::<T>()
     }
     fn get_data_layout() -> Layout {
         let size = Self::ciphertext_size();
@@ -161,40 +162,55 @@ where
         key: &Key<Cipher>,
         nonce: &Nonce<Cipher>,
         aad: &[u8],
-        contents: &NonNull<T>,
+        contents: &mut [u8],
     ) -> Tag<Cipher> {
         let keyed = Cipher::new(key);
-        let dest: &mut [u8] = unsafe {
-            std::slice::from_raw_parts_mut(contents.as_ptr() as *mut u8, Self::ciphertext_size())
-        };
-        keyed.encrypt_in_place_detached(nonce, aad, dest).unwrap()
+        eprintln!("Encryption Key: {key:#?}\nNonce: {nonce:#?}\naad: {aad:#?}");
+        //let dest: &mut [u8] = contents as &mut [u8];
+        //keyed.encrypt_in_place_detached(nonce, aad, dest).unwrap()
+        let tag = keyed.encrypt_in_place_detached(nonce, aad, contents).unwrap();
+        eprintln!("Tag: {tag:#?}");
+        eprintln!("Ciphertext: {contents:#?}");
+        tag
     }
 
     //TODO: Add checks to guarantee we are decrypted at this point
     fn ratchet_underlying(&mut self) {
-        //let src_slice: &[u8] = unsafe {
-        //    std::slice::from_raw_parts(self.ptr.as_ptr() as *const u8, Self::ciphertext_size())
-        //};
-        //let newbox = Self::new_from_ptr(src_slice);
-        ////The old data will have its destructor called, which will zeroize the underlying
-        ////*self = newbox;
-        ////self.ptr = newbox.ptr.clone();
-        ////self.key = newbox.key.clone();
-        ////self.nonce = newbox.nonce.clone();
-        ////self.tag = newbox.tag.clone();
-        ////self.aad = newbox.aad.clone();
+        //TODO: Need to rethink, due to EncBoxGuard dropping first, this will leave the data
+        //encrypted when attempting to drop, so likely need some drop logic to counteract
+        let src_data = &*self.data;
+        *self = Self::from(src_data);
+        //The old data will have its destructor called, which will zeroize the underlying
+        //*self = newbox;
+        //self.ptr = newbox.ptr.clone();
+        //self.key = newbox.key.clone();
+        //self.nonce = newbox.nonce.clone();
+        //self.tag = newbox.tag.clone();
+        //self.aad = newbox.aad.clone();
     }
 
     //Only failure is decryption related, which intentionally panics
     pub fn decrypt(&mut self) -> EncBoxGuard<'_, T, Cipher> {
         let keyed = Cipher::new(&self.key);
         let dest: &mut [u8] = unsafe {
-            std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
+            std::slice::from_raw_parts_mut(
+                std::ptr::addr_of_mut!(*self.data) as *mut u8,
+                Self::ciphertext_size(),
+            )
         };
 
-        // keyed
-        //     .decrypt_in_place_detached(&self.nonce, &usize::to_be_bytes(self.aad), dest, &self.tag)
-        //     .unwrap();
+        eprintln!(
+            "Decryption Key: {:#?}\nNonce: {:#?}\naad: {:#?}\nTag: {:#?}",
+            &self.key,
+            &self.nonce,
+            &usize::to_be_bytes(self.aad),
+            &self.tag
+        );
+        eprintln!("Ciphertext: {dest:#?}");
+
+        keyed
+            .decrypt_in_place_detached(&self.nonce, &usize::to_be_bytes(self.aad), dest, &self.tag)
+            .unwrap();
         EncBoxGuard { encbox: self }
     }
 
@@ -208,65 +224,53 @@ where
         nonce
     }
 
-    //Grab a slice since we want to use the input data, and need a slice len to guarantee safe
-    //reading
-    fn new_from_ptr(data: &[u8]) -> EncBox<T, Cipher> {
+    pub fn new(data: T) -> EncBox<T, Cipher> {
         let mut ret = EncBox {
             _marker: PhantomData,
-            ptr: Self::alloc_backing_data(),
+            data: Box::new(data),
             key: Cipher::generate_key(OsRng),
             nonce: Self::generate_nonce(),
             tag: GenericArray::default(),
             aad: size_of::<T>(),
         };
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                data.as_ptr() as *mut u8,
-                ret.ptr.as_ptr() as *mut u8,
-                data.len(),
-            );
-        }
-
-        //ret.tag = Self::encrypt(&ret.key, &ret.nonce, &usize::to_be_bytes(ret.aad), &ret.ptr);
-        ret
-    }
-
-    pub fn new(data: T) -> EncBox<T, Cipher> {
-        let src_slice: &[u8] = unsafe {
-            std::slice::from_raw_parts(std::ptr::addr_of!(data) as *const u8, size_of::<T>())
+        let dest: &mut [u8] = unsafe {
+            std::slice::from_raw_parts_mut(
+                std::ptr::addr_of_mut!(*ret.data) as *mut u8,
+                Self::ciphertext_size(),
+            )
         };
-        Self::new_from_ptr(src_slice)
+        ret.tag = Self::encrypt(&ret.key, &ret.nonce, &usize::to_be_bytes(ret.aad), dest);
+        ret
     }
 }
 
 impl<T, Cipher> Drop for EncBox<T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     fn drop(&mut self) {
-        eprintln!("Being dropped");
-        println!("Being dropped");
-        let layout = Self::get_data_layout();
-        //let _ = self.decrypt();
-        let ptr: *mut u8 = self.ptr.as_ptr() as *mut u8;
-        unsafe {
-            drop_in_place(ptr as *mut T);
-        }
-        ////self.zeroize();
+        //eprintln!("Being dropped");
+        //println!("Being dropped");
+        //let layout = Self::get_data_layout();
+        ////let _ = self.decrypt();
+        //let ptr: *mut u8 = self.ptr.as_ptr() as *mut u8;
         //unsafe {
-        //    dealloc(ptr, layout);
+        //    drop_in_place(ptr as *mut T);
         //}
+        //////self.zeroize();
+        ////unsafe {
+        ////    dealloc(ptr, layout);
+        ////}
     }
 }
 
 impl<T, Cipher> Deref for EncBox<T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
@@ -275,26 +279,26 @@ where
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { self.ptr.as_ref() }
+        unsafe { self.data.as_ref() }
     }
 }
 
 impl<T, Cipher> DerefMut for EncBox<T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.ptr.as_mut() }
+        unsafe { self.data.as_mut() }
     }
 }
 
 impl<T, Cipher> From<T> for EncBox<T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
@@ -320,7 +324,7 @@ where
 
 impl<T, Cipher> Zeroize for EncBox<T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
@@ -333,32 +337,32 @@ where
         self.tag.zeroize();
         self.aad.zeroize();
 
-        let backing: &mut [u8] = unsafe {
-            std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
-        };
-        backing.zeroize();
+        //let backing: &mut [u8] = unsafe {
+        //    std::slice::from_raw_parts_mut(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
+        //};
+        //backing.zeroize();
     }
 }
 
 impl<T, Cipher> Debug for EncBox<T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        let backing: &[u8] = unsafe {
-            std::slice::from_raw_parts(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
-        };
-        let backing_vec = Vec::from(backing);
+        //let backing: &[u8] = unsafe {
+        //    std::slice::from_raw_parts(self.ptr.as_ptr() as *mut u8, Self::ciphertext_size())
+        //};
+        //let backing_vec = Vec::from(backing);
         f.debug_struct("EncBox")
             .field("key", &self.key)
             .field("nonce", &self.nonce)
             .field("tag", &self.tag)
             .field("aad", &self.aad)
-            .field("data", &backing_vec)
+            //.field("data", &self.data)
             .finish()
     }
 }
@@ -366,7 +370,7 @@ where
 #[derive(Hash, PartialEq)]
 pub struct EncBoxGuard<'a, T, Cipher>
 where
-    T: Sized + 'a,
+    T: Sized + ToOwned<Owned = T> + 'a,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
@@ -377,7 +381,7 @@ where
 
 impl<'a, T, Cipher> Drop for EncBoxGuard<'a, T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
@@ -390,7 +394,7 @@ where
 
 impl<'a, T, Cipher> Deref for EncBoxGuard<'a, T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
@@ -399,26 +403,26 @@ where
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { self.encbox.ptr.as_ref() }
+        unsafe { self.encbox.data.as_ref() }
     }
 }
 
 impl<'a, T, Cipher> DerefMut for EncBoxGuard<'a, T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
     Cipher::CiphertextOverhead: IsEqual<U0, Output = True>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.encbox.ptr.as_mut() }
+        unsafe { self.encbox.data.as_mut() }
     }
 }
 
 impl<'a, T, Cipher> Debug for EncBoxGuard<'a, T, Cipher>
 where
-    T: Sized,
+    T: Sized + ToOwned<Owned = T>,
     Cipher: NewAead + AeadInPlace,
     //Enforce 256 bit keys
     Cipher::KeySize: IsEqual<U32, Output = True>,
@@ -441,7 +445,7 @@ mod enc_box_tests {
         //let mut enc: EncBox<String, XChaCha20Poly1305> = EncBox::from(&basic);
         let mut enc: EncBox<String, XChaCha20Poly1305> = EncBox::from(basic.clone());
 
-        eprintln!("What's in the box {enc:#?}");
+        eprintln!("What's in the box {enc:?}");
 
         let contents = enc.decrypt();
 
