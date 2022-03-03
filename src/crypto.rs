@@ -40,6 +40,9 @@ use typenum::True;
 use typenum::Unsigned;
 use zeroize::Zeroize;
 
+//TODO: Is there a better way to handle this?
+use crate as r2d2;
+
 #[derive(Default)]
 struct CryptoCtx {
     tx_key: [u8; 32],
