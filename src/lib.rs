@@ -779,7 +779,7 @@ impl ExprShuffle {
         };
     }
     fn replace_shuffle_case(&mut self, attrs: &Vec<Attribute>, node: &Expr) -> Expr {
-        if ExprShuffle::contains_shuffle_attr(attrs) {
+        if ExprShuffle::contains_shuffle_attr(attrs) && !self.list.is_empty() {
             //TODO: This statement doesn't remove the attribute when I add a shufflecase attribute
             //to it
             //Might need to use Stmt to enforce Semicolon termination at the top level
