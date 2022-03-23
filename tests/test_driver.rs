@@ -24,6 +24,13 @@ fn main() -> io::Result<()> {
 
     DirBuilder::new().recursive(true).create(&dest)?;
 
+    /*
+     * TODO: Need to selectively disable obfuscation
+     * Copy_dir will obfuscate all rust source code recursively
+     * But given the situation with copying the full workspace, and only building the test case,
+     * we run into the issue of unnecessary overhead by obfuscating all the code, instead of just
+     * what we're building
+     */
     copy_dir(&src.workspace_root, &dest, false)?;
 
     //TODO: Make this nice with concat! instead of full path prints
@@ -36,7 +43,6 @@ fn main() -> io::Result<()> {
         .arg("build")
         .arg("--target-dir")
         .arg(&src.target_dir)
-        //.current_dir(&dest)
         .current_dir(&true_dest)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
