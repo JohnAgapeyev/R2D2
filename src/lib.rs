@@ -1,22 +1,36 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use chacha20poly1305;
-use chacha20poly1305::XChaCha20Poly1305;
-use digest;
-use digest::Digest;
-use proc_macro2::Punct;
-use proc_macro2::Spacing;
-use quote::*;
-use rand;
-use rand::prelude::*;
-use rand::rngs::OsRng;
-use syn::ext::*;
-use syn::parse::*;
-use syn::spanned::Spanned;
-use syn::visit::*;
-use syn::visit_mut::*;
-use syn::*;
+pub use camino::Utf8Path;
+pub use camino::Utf8PathBuf;
+pub use cargo_metadata::MetadataCommand;
+pub use chacha20poly1305;
+pub use chacha20poly1305::XChaCha20Poly1305;
+pub use clap::{app_from_crate, arg, App, AppSettings};
+pub use digest;
+pub use digest::Digest;
+pub use proc_macro2::Punct;
+pub use proc_macro2::Spacing;
+pub use quote::*;
+pub use rand;
+pub use rand::prelude::*;
+pub use rand::rngs::OsRng;
+pub use std::env;
+pub use std::fs;
+pub use std::fs::DirBuilder;
+pub use std::fs::OpenOptions;
+pub use std::io;
+pub use std::io::ErrorKind;
+pub use std::path::PathBuf;
+pub use std::process::Command;
+pub use std::process::Stdio;
+pub use syn::ext::*;
+pub use syn::parse::*;
+pub use syn::spanned::Spanned;
+pub use syn::visit::*;
+pub use syn::visit_mut::*;
+pub use syn::*;
+pub use walkdir::WalkDir;
 
 //Needed for the quote memory encryption routines to resolve
 pub mod crypto;
@@ -36,7 +50,7 @@ struct FormatArgs {
 }
 
 impl Parse for FormatArgs {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse(input: ParseStream) -> syn::parse::Result<Self> {
         let format_string: Expr;
         let mut positional_args = Vec::new();
         let mut named_args = Vec::new();
@@ -103,9 +117,9 @@ impl ToTokens for MemEncCtx {
         let ciphertext = &self.0.ciphertext;
 
         let output = quote! {
-            let result = r2d2::decrypt_memory::<::chacha20poly1305::XChaCha20Poly1305>(r2d2::MemoryEncryptionCtx {
-                key: (::generic_array::arr![u8; #(#key),*]) as ::aead::Key::<::chacha20poly1305::XChaCha20Poly1305>,
-                nonce: (::generic_array::arr![u8; #(#nonce),*]) as ::aead::Nonce::<::chacha20poly1305::XChaCha20Poly1305>,
+            let result = r2d2::decrypt_memory::<r2d2::chacha20poly1305::XChaCha20Poly1305>(r2d2::MemoryEncryptionCtx {
+                key: (r2d2::generic_array::arr![u8; #(#key),*]) as r2d2::crypto::aead::Key::<r2d2::chacha20poly1305::XChaCha20Poly1305>,
+                nonce: (r2d2::generic_array::arr![u8; #(#nonce),*]) as r2d2::crypto::aead::Nonce::<r2d2::chacha20poly1305::XChaCha20Poly1305>,
                 ciphertext: ::std::vec![#(#ciphertext),*],
             });
             ::std::string::String::from_utf8(result).unwrap().as_str()
@@ -140,6 +154,8 @@ impl VisitMut for StrReplace {
         if let Ok(mut parsed) = node.parse_body::<FormatArgs>() {
             if let Expr::Lit(expr) = &parsed.format_string {
                 if let Lit::Str(s) = &expr.lit {
+                    //TODO: This is overzealous, it fails on "println!("{}", "Hello World")"
+                    //Need to limit this check to the format string
                     if s.value().contains("{") {
                         //Don't mess with format strings that aren't trivial
                         can_encrypt = false;
@@ -999,4 +1015,83 @@ pub fn obfuscate(input: &String) -> String {
     //eprintln!("OUTFORMAT: {}", prettyplease::unparse(&input2));
 
     prettyplease::unparse(&input2)
+}
+
+pub fn generate_temp_folder_name(name: Option<&str>) -> Utf8PathBuf {
+    let mut output = Utf8PathBuf::from_path_buf(env::temp_dir()).unwrap();
+    output.push(name.unwrap_or(".r2d2_build_dir"));
+    output
+}
+
+//TODO: Only copy differences with hashes/mtime checks
+//TODO: This needs to be optimized and cleaned up
+//TODO: Fix the error checking
+pub fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf, skip_obfuscate: bool) -> io::Result<()> {
+    let files: Vec<_> = WalkDir::new(from)
+        .into_iter()
+        .filter_entry(|e| {
+            !e.file_name()
+                .to_str()
+                .map(|s| s.starts_with("."))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    if files.iter().all(|e| !e.is_ok()) {
+        return Err(io::Error::new(
+            ErrorKind::PermissionDenied,
+            "Some files can't be accessed",
+        ));
+    }
+
+    let (dirs, files): (Vec<Utf8PathBuf>, Vec<Utf8PathBuf>) = files
+        .into_iter()
+        .map(|e| {
+            Utf8PathBuf::from(
+                Utf8Path::from_path(e.unwrap().path())
+                    .unwrap()
+                    .strip_prefix(&from.to_string())
+                    .unwrap(),
+            )
+        })
+        .filter(|path| !path.to_string().is_empty() && !path.to_string().starts_with("target/"))
+        .partition(|e| e.is_dir());
+
+    for dir in dirs {
+        let dest_dir = to.as_std_path().join(dir);
+        DirBuilder::new().recursive(true).create(&dest_dir)?;
+    }
+
+    for file in files {
+        let dest_file = Utf8PathBuf::from(to).join(&file);
+        let src_file = Utf8PathBuf::from(from).join(&file);
+
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dest_file)?;
+
+        if file.extension().unwrap_or_default().eq("rs") && !skip_obfuscate {
+            let contents = fs::read_to_string(src_file)?;
+            let obfuscated = obfuscate(&contents);
+            fs::write(dest_file, &obfuscated)?;
+        } else {
+            fs::copy(src_file, dest_file)?;
+        }
+    }
+
+    Ok(())
+}
+
+pub struct SourceInformation {
+    pub workspace_root: Utf8PathBuf,
+    pub target_dir: Utf8PathBuf,
+}
+
+pub fn get_src_dir() -> SourceInformation {
+    let metadata = MetadataCommand::new().exec().unwrap();
+    SourceInformation {
+        workspace_root: metadata.workspace_root,
+        target_dir: metadata.target_directory,
+    }
 }

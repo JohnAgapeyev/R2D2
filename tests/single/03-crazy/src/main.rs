@@ -1,10 +1,7 @@
-use r2d2::obfuscate;
-
 use libc::{sysconf, _SC_PAGESIZE};
 use std::convert::TryInto;
 use std::io::*;
 
-#[obfuscate]
 fn shift_ascii_char(index: usize, c: u8) -> u8 {
     match index % 2 {
         0 if c >= 97 && c <= 122 => c - 32,

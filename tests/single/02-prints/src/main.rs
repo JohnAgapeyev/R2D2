@@ -1,7 +1,5 @@
 use r2d2::*;
-use r2d2::rand::*;
 
-#[obfuscate]
 fn main() {
     println!("Hello, world!");
     let x = "foobar";
