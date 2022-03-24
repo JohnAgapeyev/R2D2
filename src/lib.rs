@@ -111,7 +111,6 @@ impl ToTokens for FormatArgs {
 struct MemEncCtx {
     ctx: MemoryEncryptionCtx<XChaCha20Poly1305>,
     is_let_assignment: bool,
-    is_byte_str: bool,
 }
 
 impl ToTokens for MemEncCtx {
@@ -156,6 +155,13 @@ impl ToTokens for MemEncCtx {
 
 struct StrReplace;
 
+/*
+ * The choice of Self::visit_*_mut vs visit_mut::visit_*_mut is important here
+ * Some choices will result in breakage by not encrypting
+ * Others will create a recursive loop exhausting the stack
+ *
+ * NOTE: DO NOT MODIFY WITHOUT TESTING AND VERIFICATION
+ */
 impl VisitMut for StrReplace {
     fn visit_macro_mut(&mut self, node: &mut Macro) {
         let macro_path = node
@@ -178,7 +184,6 @@ impl VisitMut for StrReplace {
         }
 
         if let Ok(mut parsed) = node.parse_body::<FormatArgs>() {
-            //eprintln!("We parsed format args {parsed:#?}");
             if let Expr::Lit(expr) = &parsed.format_string {
                 if let Lit::Str(s) = &expr.lit {
                     if s.value().contains("{") {
@@ -207,23 +212,33 @@ impl VisitMut for StrReplace {
                 parsed
                     .positional_args
                     .iter_mut()
-                    .for_each(|mut e| visit_mut::visit_expr_mut(self, &mut e));
+                    .for_each(|mut e| Self::visit_expr_mut(self, &mut e));
             }
             node.tokens = parsed.to_token_stream();
         }
         // Delegate to the default impl to visit nested macros.
         visit_mut::visit_macro_mut(self, node);
     }
-    //fn visit_expr_lit_mut(&mut self, node: &mut ExprLit) {}
 
     fn visit_expr_mut(&mut self, node: &mut Expr) {
         if let Expr::Lit(expr) = &node {
-            //TODO: Support ByteStr as well
             if let Lit::Str(s) = &expr.lit {
                 let mem_ctx = MemEncCtx {
                     ctx: encrypt_memory::<XChaCha20Poly1305>(s.value().as_bytes()),
                     is_let_assignment: false,
-                    is_byte_str: false,
+                };
+                let output = quote! {
+                    {
+                        #mem_ctx
+                    }
+                };
+                let output = syn::parse2::<ExprBlock>(output).unwrap();
+                *node = Expr::Block(output);
+                return;
+            } else if let Lit::ByteStr(s) = &expr.lit {
+                let mem_ctx = MemEncCtx {
+                    ctx: encrypt_memory::<XChaCha20Poly1305>(&s.value()),
+                    is_let_assignment: false,
                 };
                 let output = quote! {
                     {
@@ -236,7 +251,6 @@ impl VisitMut for StrReplace {
             }
         }
         // Delegate to the default impl to visit nested expressions.
-        //visit_mut::visit_expr_mut(self, node);
         visit_mut::visit_expr_mut(self, node);
     }
 
@@ -252,7 +266,6 @@ impl VisitMut for StrReplace {
                     let mem_ctx = MemEncCtx {
                         ctx: encrypt_memory::<XChaCha20Poly1305>(s.value().as_bytes()),
                         is_let_assignment: true,
-                        is_byte_str: false,
                     };
                     let output = quote! {
                         {
@@ -265,8 +278,6 @@ impl VisitMut for StrReplace {
                 }
             }
         }
-        // Delegate to the default impl to visit nested expressions.
-        //Self::visit_local_mut(self, node);
     }
 }
 

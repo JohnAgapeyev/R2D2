@@ -15,4 +15,7 @@ fn main() {
     println!("{}", x);
 
     println!("Real reference random number {}", r2d2::rand::rngs::OsRng.next_u32());
+    println!("Byte string literal {:?}", b"Fancy byte string literal");
+    println!("Raw string literal {}", r#"Lame raw string literal"#);
+    println!("Complicated string literal {:?}", br#"Lame raw string literal"#);
 }
