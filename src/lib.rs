@@ -1023,10 +1023,25 @@ pub fn generate_temp_folder_name(name: Option<&str>) -> Utf8PathBuf {
     output
 }
 
+pub fn obfuscate_dir(dir: &Utf8PathBuf) -> io::Result<()> {
+    eprintln!("Calling obfuscate with {}", dir.to_string());
+    //WalkDir filter_entry will prevent the directory from being touched, so have to filter
+    //manually
+    for file in WalkDir::new(dir) {
+        let file_path = file?.into_path();
+        if file_path.to_str().unwrap_or_default().ends_with(".rs") {
+            let contents = fs::read_to_string(&file_path)?;
+            let obfuscated = obfuscate(&contents);
+            fs::write(&file_path, &obfuscated)?;
+        }
+    }
+    Ok(())
+}
+
 //TODO: Only copy differences with hashes/mtime checks
 //TODO: This needs to be optimized and cleaned up
 //TODO: Fix the error checking
-pub fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf, skip_obfuscate: bool) -> io::Result<()> {
+pub fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf) -> io::Result<()> {
     let files: Vec<_> = WalkDir::new(from)
         .into_iter()
         .filter_entry(|e| {
@@ -1071,13 +1086,7 @@ pub fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf, skip_obfuscate: bool) -> i
             .create_new(true)
             .open(&dest_file)?;
 
-        if file.extension().unwrap_or_default().eq("rs") && !skip_obfuscate {
-            let contents = fs::read_to_string(src_file)?;
-            let obfuscated = obfuscate(&contents);
-            fs::write(dest_file, &obfuscated)?;
-        } else {
-            fs::copy(src_file, dest_file)?;
-        }
+        fs::copy(src_file, dest_file)?;
     }
 
     Ok(())

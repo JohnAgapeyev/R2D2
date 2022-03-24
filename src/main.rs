@@ -133,7 +133,11 @@ fn main() -> io::Result<()> {
 
     DirBuilder::new().recursive(true).create(&dest)?;
 
-    copy_dir(&src.workspace_root, &dest, no_obfuscate)?;
+    copy_dir(&src.workspace_root, &dest)?;
+
+    if !no_obfuscate {
+        obfuscate_dir(&dest)?;
+    }
 
     println!("Calling cargo");
 
