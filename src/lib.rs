@@ -154,8 +154,6 @@ impl VisitMut for StrReplace {
         if let Ok(mut parsed) = node.parse_body::<FormatArgs>() {
             if let Expr::Lit(expr) = &parsed.format_string {
                 if let Lit::Str(s) = &expr.lit {
-                    //TODO: This is overzealous, it fails on "println!("{}", "Hello World")"
-                    //Need to limit this check to the format string
                     if s.value().contains("{") {
                         //Don't mess with format strings that aren't trivial
                         can_encrypt = false;
@@ -177,7 +175,7 @@ impl VisitMut for StrReplace {
                         lit: Lit::Str(LitStr::new("{}", span)),
                     }),
                 ));
-                visit_mut::visit_expr_mut(self, &mut parsed.positional_args[0]);
+                Self::visit_expr_mut(self, &mut parsed.positional_args[0]);
             } else {
                 parsed
                     .positional_args
@@ -186,6 +184,7 @@ impl VisitMut for StrReplace {
             }
             node.tokens = parsed.to_token_stream();
         }
+        // Delegate to the default impl to visit nested macros.
         visit_mut::visit_macro_mut(self, node);
     }
     fn visit_expr_mut(&mut self, node: &mut Expr) {
@@ -209,7 +208,7 @@ impl VisitMut for StrReplace {
 
     fn visit_arm_mut(&mut self, node: &mut Arm) {
         //Don't visit patterns, those string literals can't be replaced
-        visit_mut::visit_expr_mut(self, &mut node.body);
+        Self::visit_expr_mut(self, &mut node.body);
     }
 }
 
@@ -1024,7 +1023,6 @@ pub fn generate_temp_folder_name(name: Option<&str>) -> Utf8PathBuf {
 }
 
 pub fn obfuscate_dir(dir: &Utf8PathBuf) -> io::Result<()> {
-    eprintln!("Calling obfuscate with {}", dir.to_string());
     //WalkDir filter_entry will prevent the directory from being touched, so have to filter
     //manually
     for file in WalkDir::new(dir) {
