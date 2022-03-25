@@ -91,4 +91,14 @@ mod simple {
     fn prints_functional() {
         functional_test("tests/single/02-prints");
     }
+
+    #[test]
+    fn shuffle_prints_compile() {
+        compile_test("tests/single/04-shuffle_prints");
+    }
+
+    #[test]
+    fn shuffle_prints_functional() {
+        functional_test("tests/single/04-shuffle_prints");
+    }
 }
