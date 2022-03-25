@@ -12,9 +12,8 @@ path = "tests/test_driver.rs"
 [workspace]
 members = ["./", "tests/single/*"]
 
-#[dev-dependencies]
-#trybuild = { version = "1.0.54", features = ["diff"] }
-#libc = "0.2"
+[dev-dependencies]
+lazy_static = "1.4.0"
 
 [dependencies]
 zeroize = { version = "1.4.3", features = ["alloc", "zeroize_derive"]}
