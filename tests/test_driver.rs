@@ -5,7 +5,7 @@ use std::fs;
 use std::fs::DirBuilder;
 use std::io;
 use std::process::Command;
-use std::process::Stdio;
+use std::process::Output;
 use std::sync::Mutex;
 
 const TEST_DIRECTORY: &str = ".r2d2_test_dir";
@@ -43,70 +43,52 @@ fn setup_test_crate(path: &str) -> io::Result<(Utf8PathBuf, Utf8PathBuf)> {
     Ok((src.target_dir, true_dest))
 }
 
+fn compile_test(path: &str) -> Output {
+    let _lock = FILESYSTEM_MUTEX.lock().unwrap();
+    let (src, dest) = setup_test_crate(path).unwrap();
+
+    Command::new("cargo")
+        .arg("build")
+        .arg("--target-dir")
+        .arg(&src)
+        .current_dir(&dest)
+        .output()
+        .unwrap()
+}
+
+fn functional_test(path: &str) -> Output {
+    let _lock = FILESYSTEM_MUTEX.lock().unwrap();
+    let (src, dest) = setup_test_crate(path).unwrap();
+
+    Command::new("cargo")
+        .arg("run")
+        .arg("--target-dir")
+        .arg(&src)
+        .current_dir(&dest)
+        .output()
+        .unwrap()
+}
+
 mod simple {
     use crate::*;
 
     #[test]
-    fn hello_world() {
-        let _lock = FILESYSTEM_MUTEX.lock().unwrap();
-        let (src, dest) = setup_test_crate("tests/single/01-hello_world").unwrap();
-
-        println!("Calling cargo");
-
-        Command::new("cargo")
-            .arg("build")
-            .arg("--target-dir")
-            .arg(&src)
-            .current_dir(&dest)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .expect("failed to execute process");
-
-        println!("Process is done");
-
-        Command::new("cargo")
-            .arg("run")
-            .arg("--target-dir")
-            .arg(&src)
-            .current_dir(&dest)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .expect("failed to execute process");
-
-        println!("Execution is done");
+    fn hello_world_compile() {
+        compile_test("tests/single/01-hello_world");
     }
 
     #[test]
-    fn prints() {
-        let _lock = FILESYSTEM_MUTEX.lock().unwrap();
-        let (src, dest) = setup_test_crate("tests/single/02-prints").unwrap();
+    fn hello_world_functional() {
+        functional_test("tests/single/01-hello_world");
+    }
 
-        println!("Calling cargo");
+    #[test]
+    fn prints_compile() {
+        compile_test("tests/single/02-prints");
+    }
 
-        Command::new("cargo")
-            .arg("build")
-            .arg("--target-dir")
-            .arg(&src)
-            .current_dir(&dest)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .expect("failed to execute process");
-
-        println!("Process is done");
-
-        Command::new("cargo")
-            .arg("run")
-            .arg("--target-dir")
-            .arg(&src)
-            .current_dir(&dest)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .output()
-            .expect("failed to execute process");
-
-        println!("Execution is done");
+    #[test]
+    fn prints_functional() {
+        functional_test("tests/single/02-prints");
     }
 }
