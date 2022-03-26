@@ -93,6 +93,11 @@ mod simple {
     }
 
     #[test]
+    fn crazy_compile() {
+        compile_test("tests/single/03-crazy");
+    }
+
+    #[test]
     fn shuffle_prints_compile() {
         compile_test("tests/single/04-shuffle_prints");
     }
