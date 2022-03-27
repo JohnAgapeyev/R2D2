@@ -4,6 +4,7 @@ use r2d2::*;
 use std::fs;
 use std::fs::DirBuilder;
 use std::io;
+use std::io::Write;
 use std::process::Command;
 use std::process::Output;
 use std::sync::Mutex;
@@ -74,36 +75,58 @@ mod simple {
 
     #[test]
     fn hello_world_compile() {
-        compile_test("tests/single/01-hello_world");
+        let output = compile_test("tests/single/01-hello_world");
+        assert!(output.status.success());
     }
 
     #[test]
     fn hello_world_functional() {
-        functional_test("tests/single/01-hello_world");
+        let output = functional_test("tests/single/01-hello_world");
+        assert!(output.status.success());
     }
 
     #[test]
     fn prints_compile() {
-        compile_test("tests/single/02-prints");
+        let output = compile_test("tests/single/02-prints");
+        assert!(output.status.success());
     }
 
     #[test]
     fn prints_functional() {
-        functional_test("tests/single/02-prints");
+        let output = functional_test("tests/single/02-prints");
+        assert!(output.status.success());
     }
 
     #[test]
     fn crazy_compile() {
-        compile_test("tests/single/03-crazy");
+        let output = compile_test("tests/single/03-crazy");
+        assert!(output.status.success());
     }
 
     #[test]
     fn shuffle_prints_compile() {
-        compile_test("tests/single/04-shuffle_prints");
+        let output = compile_test("tests/single/04-shuffle_prints");
+        assert!(output.status.success());
     }
 
     #[test]
     fn shuffle_prints_functional() {
-        functional_test("tests/single/04-shuffle_prints");
+        let output = functional_test("tests/single/04-shuffle_prints");
+        assert!(output.status.success());
+    }
+
+    #[test]
+    fn shuffle_let_compile() {
+        let output = compile_test("tests/single/05-shuffle_let");
+        assert!(output.status.success());
+    }
+
+    #[test]
+    fn shuffle_let_functional() {
+        let output = functional_test("tests/single/05-shuffle_let");
+        assert!(output.status.success());
+
+        io::stdout().write_all(&output.stdout).unwrap();
+        io::stderr().write_all(&output.stderr).unwrap();
     }
 }
