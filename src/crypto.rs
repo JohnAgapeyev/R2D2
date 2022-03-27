@@ -381,6 +381,19 @@ where
 }
 
 #[cfg(test)]
+mod memory_encryption_tests {
+    use crate::crypto::*;
+    #[test]
+    fn check_decryption() {
+        let mut data = [0u8; 128];
+        OsRng.fill_bytes(&mut data);
+        let ctx = encrypt_memory::<XChaCha20Poly1305>(&data);
+        let plaintext = decrypt_memory::<XChaCha20Poly1305>(ctx);
+        assert_eq!(&data, plaintext.as_slice());
+    }
+}
+
+#[cfg(test)]
 mod enc_box_tests {
     use crate::crypto::*;
     #[test]
