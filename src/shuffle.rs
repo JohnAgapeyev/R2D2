@@ -8,7 +8,7 @@ use syn::*;
 #[allow(unused_imports)]
 use crate as r2d2;
 
-const SHUFFLE_ATTR_NAME: &str = "shufflecase";
+const SHUFFLE_ATTR_NAME: &str = "shuffle";
 
 trait HasAttributes {
     fn get_attrs(&mut self) -> Option<&mut Vec<Attribute>>;

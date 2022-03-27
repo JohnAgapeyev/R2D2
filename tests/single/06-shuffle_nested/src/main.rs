@@ -1,24 +1,24 @@
 fn main() {
-    #[shufflecase]
+    #[shuffle]
     println!("1");
     {
-        #[shufflecase]
+        #[shuffle]
         println!("2");
         {
-            #[shufflecase]
+            #[shuffle]
             println!("3");
             {
-                #[shufflecase]
+                #[shuffle]
                 println!("4");
-                #[shufflecase]
+                #[shuffle]
                 println!("5");
             }
-            #[shufflecase]
+            #[shuffle]
             println!("6");
         }
-        #[shufflecase]
+        #[shuffle]
         println!("7");
     }
-    #[shufflecase]
+    #[shuffle]
     println!("8");
 }

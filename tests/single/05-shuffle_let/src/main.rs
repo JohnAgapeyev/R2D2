@@ -1,11 +1,11 @@
 fn main() {
-    #[shufflecase]
+    #[shuffle]
     let w = 1;
-    #[shufflecase]
+    #[shuffle]
     let x = 2;
-    #[shufflecase]
+    #[shuffle]
     let y = 3;
-    #[shufflecase]
+    #[shuffle]
     let z = 4;
 
     eprintln!("My values are {w}, {x}, {y}, {z}");

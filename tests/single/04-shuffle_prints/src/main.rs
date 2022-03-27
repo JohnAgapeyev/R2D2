@@ -1,10 +1,10 @@
 fn main() {
-    #[shufflecase]
+    #[shuffle]
     println!("1");
-    #[shufflecase]
+    #[shuffle]
     println!("2");
-    #[shufflecase]
+    #[shuffle]
     println!("3");
-    #[shufflecase]
+    #[shuffle]
     println!("4");
 }

@@ -28,38 +28,6 @@ use crate::strencrypt::*;
 use crate as r2d2;
 
 /*
- * Plan of attack for full encryption of strings
- * Parse as ItemFn
- * Fold on Expr objects
- * Filter/Match only on ExprLit
- * Filter out ExprLit that aren't strings
- * Replace ExprLit with ExprBlock
- * Generate ExprBlock using quote!
- * Done inside the generic fold_expr call, so we can change the enum type easily
- *
- * If we manage to get RNG output in this proc_macro execution, might not even need to worry about
- * const functions being an annoying edge case
- * Obviously wouldn't help against const function initialization of static strings
- * But for that, you can probably get away with a standard EncryptedBox<String> type move
- * Would need a test to verify that though, but also easy enough to forbid in code review
- */
-
-/*
- * Plan for runtime string encryption
- * Need to make a wrapper type obviously
- * Almost certainly needs to implement Deref and DerefMut
- * Probably also need to wrap my head around Pin<T>
- * One thing I'm concerned about is the lifetime of references to the string
- * AKA, re-encryption when out of scope
- * Might need to hand out a separate "EncStringRef" type, which implements Drop
- *
- * Then have a combo of "string arbiter which decrypts on the fly", and reference thin object
- * which basically exists to encrypt at rest when the reference count is decremented
- * Mutations over the use of the reference should be fine since they'd all be proxied through Deref
- * So things like key rotation wouldn't be noticeable
- */
-
-/*
  * Plan for shatter handling
  * Wait until Rust 1.59, when inline asm should be stabilized
  * Rely on subtle crate for assert checks in false branches
@@ -70,15 +38,6 @@ use crate as r2d2;
  * Literally just spawn a thread, run that single line of code, then join the thread
  * May not be viable, but it'd be hilarious spawning tons of threads constantly, I bet it'd be
  * awful to RE
- */
-
-/*
- * Plan for reordering
- * Probably can just be lazy and do a 2 pass thing
- * Grab the annotated statements, throw them in a list
- * Shuffle the list
- * Re-pass through the statement block
- * If a statement is annotated, replace it with the head of the shuffled list and pop the head off
  */
 
 /*
@@ -113,52 +72,6 @@ use crate as r2d2;
  * It's nowhere close to being standardized, but it's something to watch out for
  * Encrypting VTables would be amazing
  * It's called ptr_metadata, something to keep an eye out for
- */
-
-/*
- * Also should probably get a nightly build up and running just so I can use cargo expand to verify
- * what I'm actually doing at this point
- */
-
-/*
- * Shuffle is on hold pending a better solution
- * Currently, you can't actually add custom attributes to arbitrary statements
- * See the following example:
- *
- *   #[shuffle]
- *   fn shuffled() {
- *       #[shufflecase]
- *       println!("Shuffle line 1");
- *       println!("Shuffle line 2");
- *       println!("Shuffle line 3");
- *       #[shufflecase]
- *       println!("Shuffle line 4");
- *       println!("Shuffle line 5");
- *       #[shufflecase]
- *       println!("Shuffle line 6");
- *   }
- *
- * Trying to register a proc macro for shufflecase produces an error complaining that it's not
- * possible and to see a github issue for more information.
- * That leads down a rabbit hole of issues, stabilization, proc_macro hygiene and functionality
- * rewrites, a total mess.
- * But the end result is that no, it's not supported, not likely to be added any time soon, tough
- * luck.
- * Meaning, if we want to have this kind of functionality, another approach may be required.
- *
- * Few ideas:
- *  - Run this stuff at a build script level, automatically preprocess the entire file prior to
- *  compilation
- *  - Custom preprocessor (which honestly could still be Rust), that runs prior to compilation
- *  - Simple preprocessor that does string parsing style replacement
- *
- * Main question is how that preprocessor would work
- * Do we call it from a build script level?
- * Can build scripts actually modify code?
- * Can build scripts remove existing files from compilation? (Modify a copy, and ignore the
- * original)
- * Or do we have to hook it into cargo separately, like as an entire foreign application that runs
- * prior to "cargo build"?
  */
 
 pub fn obfuscate(input: &String) -> String {
