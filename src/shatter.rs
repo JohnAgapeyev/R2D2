@@ -6,6 +6,8 @@ use rand::rngs::OsRng;
 use syn::visit_mut::*;
 use syn::*;
 
+use crate::parse::*;
+
 //Workaround to self obfuscate (since we can't add ourselves as a dependency)
 #[allow(unused_imports)]
 use crate as r2d2;
@@ -87,6 +89,54 @@ impl Shatter {
         let parsed = syn::parse2::<Block>(tokens).unwrap();
         parsed.stmts
     }
+
+    fn convert_assert(&self, assert: Option<ExprMacro>, is_cmp: bool, is_eq: bool) -> Vec<Stmt> {
+        let m = assert.unwrap();
+
+        let condition: TokenStream;
+
+        /*
+         * We negate the conditions
+         * This is replacing an assert, so an assert for a true condition means we insert garbage
+         * when a false condition is present
+         * We're taking the place of the failure case here
+         */
+        if is_cmp {
+            //This is an *_eq or *_ne assert
+            let parsed = m.mac.parse_body::<AssertCmpArgs>().unwrap();
+            let parsed_first = parsed.first_condition;
+            let parsed_second = parsed.second_condition;
+            if is_eq {
+                condition = quote! {
+                    #parsed_first != #parsed_second
+                };
+            } else {
+                condition = quote! {
+                    #parsed_first == #parsed_second
+                };
+            }
+        } else {
+            //This is a simple assert without any equality checks
+            let parsed = m.mac.parse_body::<AssertArgs>().unwrap();
+            let parsed_cond = parsed.condition;
+            condition = quote! {
+                !(#parsed_cond)
+            };
+        }
+
+        let body = self.generate_shatter_statement();
+
+        let replacement = quote! {
+            {
+                if #condition {
+                    #(#body)*
+                }
+            }
+        };
+
+        let parsed_replacement = syn::parse2::<Block>(replacement).unwrap();
+        parsed_replacement.stmts
+    }
 }
 
 impl VisitMut for Shatter {
@@ -94,6 +144,11 @@ impl VisitMut for Shatter {
         let mut shattered_stmts: Vec<Stmt> = Vec::new();
 
         for stmt in &mut block.stmts {
+            let mut is_assert = false;
+            let mut is_assert_eq = false;
+            let mut is_assert_cmp = false;
+            let mut assert_macro: Option<ExprMacro> = None;
+
             let can_shatter = match stmt {
                 Stmt::Local(_) => true,
                 Stmt::Item(_) => true,
@@ -125,6 +180,48 @@ impl VisitMut for Shatter {
                             "panic" => false,
                             "unreachable" => false,
                             "unimplemented" => false,
+                            "assert" => {
+                                is_assert = true;
+                                is_assert_cmp = false;
+                                is_assert_eq = false;
+                                assert_macro = Some(expr.to_owned());
+                                true
+                            }
+                            "assert_eq" => {
+                                is_assert = true;
+                                is_assert_cmp = true;
+                                is_assert_eq = true;
+                                assert_macro = Some(expr.to_owned());
+                                true
+                            }
+                            "assert_ne" => {
+                                is_assert = true;
+                                is_assert_cmp = true;
+                                is_assert_eq = false;
+                                assert_macro = Some(expr.to_owned());
+                                true
+                            }
+                            "debug_assert" => {
+                                is_assert = true;
+                                is_assert_cmp = false;
+                                is_assert_eq = false;
+                                assert_macro = Some(expr.to_owned());
+                                true
+                            }
+                            "debug_assert_eq" => {
+                                is_assert = true;
+                                is_assert_cmp = true;
+                                is_assert_eq = true;
+                                assert_macro = Some(expr.to_owned());
+                                true
+                            }
+                            "debug_assert_ne" => {
+                                is_assert = true;
+                                is_assert_cmp = true;
+                                is_assert_eq = false;
+                                assert_macro = Some(expr.to_owned());
+                                true
+                            }
                             _ => true,
                         }
                     }
@@ -133,13 +230,24 @@ impl VisitMut for Shatter {
                     _ => true,
                 },
             };
-            shattered_stmts.push(stmt.clone());
+            if !is_assert {
+                shattered_stmts.push(stmt.clone());
+            }
             if !can_shatter {
                 continue;
             }
-            //TODO: This is where we can add a random chance to add shatter statement
-            if true {
-                shattered_stmts.extend_from_slice(&self.generate_shatter_statement());
+            if is_assert {
+                //Parse and convert the assert
+                shattered_stmts.extend_from_slice(&self.convert_assert(
+                    assert_macro,
+                    is_assert_cmp,
+                    is_assert_eq,
+                ));
+            } else {
+                //TODO: This is where we can add a random chance to add shatter statement
+                if true {
+                    shattered_stmts.extend_from_slice(&self.generate_shatter_statement());
+                }
             }
             // Delegate to the default impl to visit nested scopes.
             Self::visit_stmt_mut(self, stmt);

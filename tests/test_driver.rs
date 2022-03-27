@@ -70,7 +70,7 @@ fn functional_test(path: &str) -> Output {
         .unwrap()
 }
 
-mod simple {
+mod single {
     use crate::*;
 
     #[test]
@@ -135,15 +135,27 @@ mod simple {
     #[test]
     fn shuffle_nested_compile() {
         let output = compile_test("tests/single/06-shuffle_nested");
-
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
         assert!(output.status.success());
     }
 
     #[test]
     fn shuffle_nested_functional() {
         let output = functional_test("tests/single/06-shuffle_nested");
+        assert!(output.status.success());
+
+        io::stdout().write_all(&output.stdout).unwrap();
+        io::stderr().write_all(&output.stderr).unwrap();
+    }
+
+    #[test]
+    fn assert_shatter_compile() {
+        let output = compile_test("tests/single/07-assert_shatter");
+        assert!(output.status.success());
+    }
+
+    #[test]
+    fn assert_shatter_functional() {
+        let output = functional_test("tests/single/07-assert_shatter");
         assert!(output.status.success());
 
         io::stdout().write_all(&output.stdout).unwrap();

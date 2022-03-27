@@ -21,6 +21,7 @@ pub mod crypto;
 mod shuffle;
 mod strencrypt;
 mod shatter;
+mod parse;
 //Import symbols from those submodules
 use crate::shuffle::*;
 use crate::strencrypt::*;
