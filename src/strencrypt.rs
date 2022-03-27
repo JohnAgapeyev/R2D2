@@ -233,6 +233,13 @@ impl VisitMut for StrReplace {
         Self::visit_expr_mut(self, &mut node.body);
     }
 
+    fn visit_item_const_mut(&mut self, _node: &mut ItemConst) {
+        /*
+         * Skip all constant expressions since we can't decrypt those
+         * Function intentionally left blank
+         */
+    }
+
     fn visit_local_mut(&mut self, node: &mut Local) {
         if let Some(init) = &node.init {
             if let Expr::Lit(expr) = &*init.1 {

@@ -140,6 +140,7 @@ fn contains_shuffle_attr(attrs: &Vec<Attribute>) -> bool {
     return false;
 }
 
+//TODO: This and the shuffle finding are inefficient, try and remove all the cloning
 fn stmt_contains_shuffle_attr(stmt: &Stmt) -> bool {
     let mut cloned = stmt.to_owned();
     let cloned_attrs = cloned.get_attrs();
