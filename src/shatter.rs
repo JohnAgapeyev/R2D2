@@ -2,7 +2,6 @@ use quote::*;
 use rand;
 use rand::prelude::*;
 use rand::rngs::OsRng;
-use subtle::*;
 use syn::visit_mut::*;
 use syn::*;
 
@@ -76,11 +75,6 @@ impl VisitMut for Shatter {
 
         for stmt in &mut block.stmts {
             /*
-             * TODO: Ignore any kind of break/continue/return expressions
-             * Anything injected afterwords is unreachable
-             * Injecting after return expressions is also a compiler error
-             */
-            /*
              * TODO: Detect whether we're inside an unsafe block already
              * We can skip any unsafe blocks in the shattered code, which eliminates a compiler
              * warning on the obfuscated source
@@ -99,7 +93,30 @@ impl VisitMut for Shatter {
                     //Ignore Expr, we only want to shatter near expressions that have semicolons
                     false
                 }
-                Stmt::Semi(_, _) => true,
+                Stmt::Semi(expr, _) => match expr {
+                    //Skip break/continue/return
+                    Expr::Break(_) => false,
+                    Expr::Continue(_) => false,
+                    Expr::Macro(expr) => {
+                        let macro_path = expr
+                            .mac
+                            .path
+                            .get_ident()
+                            .map(|ident| ident.to_string())
+                            .unwrap_or_default();
+                        //Skip any macros that affect control flow
+                        match macro_path.as_str() {
+                            "compile_error" => false,
+                            "panic" => false,
+                            "unreachable" => false,
+                            "unimplemented" => false,
+                            _ => true,
+                        }
+                    }
+                    Expr::Return(_) => false,
+                    Expr::Yield(_) => false,
+                    _ => true,
+                },
             };
             shattered_stmts.push(stmt.clone());
             if !can_shatter {
