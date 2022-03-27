@@ -1,6 +1,6 @@
 use rand::prelude::SliceRandom;
 use rand::rngs::OsRng;
-use syn::visit::*;
+use syn::spanned::Spanned;
 use syn::visit_mut::*;
 use syn::*;
 
@@ -8,661 +8,200 @@ use syn::*;
 #[allow(unused_imports)]
 use crate as r2d2;
 
-struct ExprShuffle {
-    list: Vec<Expr>,
+const SHUFFLE_ATTR_NAME: &str = "shufflecase";
+
+trait HasAttributes {
+    fn get_attrs(&mut self) -> Option<&mut Vec<Attribute>>;
+    fn to_stmt(self) -> Stmt;
 }
 
-//TODO: Need scoping, separate shuffle regions, as well as function boundaries
-//We don't want to have shuffle being global across a file
-impl ExprShuffle {
-    fn is_shuffle_attr(attr: &str) -> bool {
-        match attr {
-            "shufflecase" => true,
-            _ => false,
+impl HasAttributes for Expr {
+    fn get_attrs(&mut self) -> Option<&mut Vec<Attribute>> {
+        match self {
+            Expr::Array(expr) => Some(&mut expr.attrs),
+            Expr::Assign(expr) => Some(&mut expr.attrs),
+            Expr::AssignOp(expr) => Some(&mut expr.attrs),
+            Expr::Async(expr) => Some(&mut expr.attrs),
+            Expr::Await(expr) => Some(&mut expr.attrs),
+            Expr::Binary(expr) => Some(&mut expr.attrs),
+            Expr::Block(expr) => Some(&mut expr.attrs),
+            Expr::Box(expr) => Some(&mut expr.attrs),
+            Expr::Break(expr) => Some(&mut expr.attrs),
+            Expr::Call(expr) => Some(&mut expr.attrs),
+            Expr::Cast(expr) => Some(&mut expr.attrs),
+            Expr::Closure(expr) => Some(&mut expr.attrs),
+            Expr::Continue(expr) => Some(&mut expr.attrs),
+            Expr::Field(expr) => Some(&mut expr.attrs),
+            Expr::ForLoop(expr) => Some(&mut expr.attrs),
+            Expr::Group(expr) => Some(&mut expr.attrs),
+            Expr::If(expr) => Some(&mut expr.attrs),
+            Expr::Index(expr) => Some(&mut expr.attrs),
+            Expr::Let(expr) => Some(&mut expr.attrs),
+            Expr::Lit(expr) => Some(&mut expr.attrs),
+            Expr::Loop(expr) => Some(&mut expr.attrs),
+            Expr::Macro(expr) => Some(&mut expr.attrs),
+            Expr::Match(expr) => Some(&mut expr.attrs),
+            Expr::MethodCall(expr) => Some(&mut expr.attrs),
+            Expr::Paren(expr) => Some(&mut expr.attrs),
+            Expr::Path(expr) => Some(&mut expr.attrs),
+            Expr::Range(expr) => Some(&mut expr.attrs),
+            Expr::Reference(expr) => Some(&mut expr.attrs),
+            Expr::Repeat(expr) => Some(&mut expr.attrs),
+            Expr::Return(expr) => Some(&mut expr.attrs),
+            Expr::Struct(expr) => Some(&mut expr.attrs),
+            Expr::Try(expr) => Some(&mut expr.attrs),
+            Expr::TryBlock(expr) => Some(&mut expr.attrs),
+            Expr::Tuple(expr) => Some(&mut expr.attrs),
+            Expr::Type(expr) => Some(&mut expr.attrs),
+            Expr::Unary(expr) => Some(&mut expr.attrs),
+            Expr::Unsafe(expr) => Some(&mut expr.attrs),
+            Expr::While(expr) => Some(&mut expr.attrs),
+            Expr::Yield(expr) => Some(&mut expr.attrs),
+            _ => None,
         }
     }
-    fn get_attr_name(attr: &Attribute) -> String {
-        if let Some(ident) = attr.path.get_ident() {
-            ident.to_string()
-        } else {
-            "".to_string()
+
+    fn to_stmt(self) -> Stmt {
+        let semi = Token![;](self.span());
+        Stmt::Semi(self, semi)
+    }
+}
+
+impl HasAttributes for Local {
+    fn get_attrs(&mut self) -> Option<&mut Vec<Attribute>> {
+        Some(&mut self.attrs)
+    }
+    fn to_stmt(self) -> Stmt {
+        Stmt::Local(self)
+    }
+}
+
+impl HasAttributes for Item {
+    fn get_attrs(&mut self) -> Option<&mut Vec<Attribute>> {
+        match self {
+            Item::Const(item) => Some(&mut item.attrs),
+            Item::Enum(item) => Some(&mut item.attrs),
+            Item::ExternCrate(item) => Some(&mut item.attrs),
+            Item::Fn(item) => Some(&mut item.attrs),
+            Item::ForeignMod(item) => Some(&mut item.attrs),
+            Item::Impl(item) => Some(&mut item.attrs),
+            Item::Macro(item) => Some(&mut item.attrs),
+            Item::Macro2(item) => Some(&mut item.attrs),
+            Item::Mod(item) => Some(&mut item.attrs),
+            Item::Static(item) => Some(&mut item.attrs),
+            Item::Struct(item) => Some(&mut item.attrs),
+            Item::Trait(item) => Some(&mut item.attrs),
+            Item::TraitAlias(item) => Some(&mut item.attrs),
+            Item::Type(item) => Some(&mut item.attrs),
+            Item::Union(item) => Some(&mut item.attrs),
+            Item::Use(item) => Some(&mut item.attrs),
+            _ => None,
         }
     }
-    fn contains_shuffle_attr(attrs: &Vec<Attribute>) -> bool {
-        for attr in attrs {
-            if ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr)) {
-                return true;
-            }
+    fn to_stmt(self) -> Stmt {
+        Stmt::Item(self)
+    }
+}
+
+impl HasAttributes for Stmt {
+    fn get_attrs(&mut self) -> Option<&mut Vec<Attribute>> {
+        match self {
+            Stmt::Local(local) => local.get_attrs(),
+            Stmt::Item(item) => item.get_attrs(),
+            //Ignore Expr, we only want to shuffle statements with semicolons
+            Stmt::Semi(expr, _semi) => expr.get_attrs(),
+            _ => None,
         }
+    }
+    fn to_stmt(self) -> Stmt {
+        self
+    }
+}
+
+fn is_shuffle_attr(attr: &str) -> bool {
+    match attr {
+        SHUFFLE_ATTR_NAME => true,
+        _ => false,
+    }
+}
+
+fn get_attr_name(attr: &Attribute) -> String {
+    attr.path
+        .get_ident()
+        .map_or(String::new(), |ident| ident.to_string())
+}
+
+fn contains_shuffle_attr(attrs: &Vec<Attribute>) -> bool {
+    for attr in attrs {
+        if is_shuffle_attr(&get_attr_name(&attr)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn stmt_contains_shuffle_attr(stmt: &Stmt) -> bool {
+    let mut cloned = stmt.to_owned();
+    let cloned_attrs = cloned.get_attrs();
+    if cloned_attrs.is_none() {
         return false;
     }
+    let cloned_attrs_ref = cloned_attrs.unwrap();
+    contains_shuffle_attr(cloned_attrs_ref)
+}
 
-    //TODO: I hate this much code duplication, but I don't have a better idea yet
-    fn fetch_shuffled_statements(&mut self, node: &Expr) {
-        match node {
-            Expr::Array(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Assign(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::AssignOp(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Async(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Await(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Binary(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Block(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Box(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Break(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Call(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Cast(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Closure(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Continue(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Field(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::ForLoop(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Group(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::If(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Index(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Let(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Lit(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Loop(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Macro(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Match(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::MethodCall(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Paren(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Path(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Range(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Reference(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Repeat(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Return(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Struct(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Try(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::TryBlock(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Tuple(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Type(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Unary(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Unsafe(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::While(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            Expr::Yield(expr) => {
-                let mut dup_node = expr.clone();
-                if ExprShuffle::contains_shuffle_attr(&dup_node.attrs) {
-                    dup_node.attrs = dup_node
-                        .attrs
-                        .iter()
-                        .map(|attr| attr.to_owned())
-                        .filter(|attr| {
-                            !ExprShuffle::is_shuffle_attr(&ExprShuffle::get_attr_name(&attr))
-                        })
-                        .collect();
-                    self.list.push(syn::Expr::from(dup_node));
-                }
-            }
-            _ => {}
-        };
+fn find_shuffle_stmts<T>(expr: &T) -> Option<Stmt>
+where
+    T: HasAttributes + ToOwned<Owned = T>,
+{
+    let mut cloned = expr.to_owned();
+    let cloned_attrs = cloned.get_attrs();
+    if cloned_attrs.is_none() {
+        return None;
     }
-    fn replace_shuffle_case(&mut self, attrs: &Vec<Attribute>, node: &Expr) -> Expr {
-        if ExprShuffle::contains_shuffle_attr(attrs) && !self.list.is_empty() {
-            //TODO: This statement doesn't remove the attribute when I add a shufflecase attribute
-            //to it
-            //Might need to use Stmt to enforce Semicolon termination at the top level
-            //Best guess is that multiple Expressions are getting tripped up
-            let selection = self.list.first().unwrap().clone();
-            self.list.remove(0);
-            return selection;
+    let cloned_attrs_ref = cloned_attrs.unwrap();
+    if contains_shuffle_attr(&cloned_attrs_ref) {
+        //Remove the shuffle attribute from the cloned target statement
+        let stripped_attrs: Vec<Attribute> = cloned_attrs_ref
+            .iter()
+            .filter(|attr| !is_shuffle_attr(&get_attr_name(attr)))
+            .map(|attr| attr.to_owned())
+            .collect();
+        *cloned_attrs_ref = stripped_attrs;
+        return Some(cloned.to_stmt());
+    }
+    return None;
+}
+
+struct Shuffle;
+
+impl VisitMut for Shuffle {
+    fn visit_block_mut(&mut self, block: &mut Block) {
+        let mut targets: Vec<Stmt> = Vec::new();
+        for stmt in &block.stmts {
+            let result = match stmt {
+                Stmt::Local(local) => find_shuffle_stmts::<Local>(local),
+                Stmt::Item(item) => find_shuffle_stmts::<Item>(item),
+                //Ignore Expr, we only want to shuffle statements with semicolons
+                Stmt::Semi(expr, _semi) => find_shuffle_stmts::<Expr>(expr),
+                _ => None,
+            };
+            if result.is_some() {
+                targets.push(result.unwrap());
+            }
         }
-        node.clone()
-    }
-}
-
-impl Visit<'_> for ExprShuffle {
-    fn visit_expr(&mut self, node: &Expr) {
-        self.fetch_shuffled_statements(node);
-        // Delegate to the default impl to visit nested expressions.
-        visit::visit_expr(self, node);
-    }
-}
-impl VisitMut for ExprShuffle {
-    fn visit_expr_mut(&mut self, node: &mut Expr) {
-        let new_node = match &*node {
-            Expr::Array(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Assign(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::AssignOp(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Async(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Await(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Binary(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Block(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Box(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Break(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Call(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Cast(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Closure(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Continue(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Field(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::ForLoop(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Group(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::If(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Index(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Let(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Lit(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Loop(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Macro(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Match(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::MethodCall(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Paren(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Path(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Range(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Reference(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Repeat(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Return(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Struct(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Try(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::TryBlock(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Tuple(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Type(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Unary(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Unsafe(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::While(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            Expr::Yield(expr) => self.replace_shuffle_case(&expr.attrs, node),
-            _ => node.to_owned(),
-        };
-        *node = new_node;
-        // Delegate to the default impl to visit nested expressions.
-        visit_mut::visit_expr_mut(self, node);
+        targets.shuffle(&mut OsRng);
+        for stmt in &mut block.stmts {
+            if stmt_contains_shuffle_attr(stmt) {
+                let replacement = targets.pop().unwrap();
+                *stmt = replacement;
+            }
+            // Delegate to the default impl to visit nested scopes.
+            Self::visit_stmt_mut(self, stmt);
+        }
     }
 }
 
 pub fn shuffle(input: &mut File) {
-    let mut shuf = ExprShuffle { list: vec![] };
-    ExprShuffle::visit_file(&mut shuf, input);
-    shuf.list.shuffle(&mut OsRng);
-    ExprShuffle::visit_file_mut(&mut shuf, input);
+    Shuffle.visit_file_mut(input);
 }
