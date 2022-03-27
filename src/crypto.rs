@@ -147,6 +147,7 @@ where
     }
 
     pub fn decrypt(&mut self) -> EncBoxGuard<'_, T, Cipher> {
+        //TODO: Enforce precondition with Result<T>, rather than asserting
         debug_assert!(self.state == EncBoxState::Encrypted);
         self.decrypt_underlying();
         EncBoxGuard { encbox: self }

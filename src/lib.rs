@@ -19,9 +19,11 @@ pub use rand::rngs::OsRng;
 pub mod crypto;
 mod shuffle;
 mod strencrypt;
+mod shatter;
 //Import symbols from those submodules
 use crate::shuffle::*;
 use crate::strencrypt::*;
+use crate::shatter::*;
 
 //Workaround to self obfuscate (since we can't add ourselves as a dependency)
 #[allow(unused_imports)]
@@ -82,6 +84,7 @@ pub fn obfuscate(input: &String) -> String {
 
     shuffle(&mut input2);
     encrypt_strings(&mut input2);
+    shatter(&mut input2);
 
     //eprintln!("OUTPUT: {:#?}", input2);
     //eprintln!("OUTFORMAT: {}", prettyplease::unparse(&input2));
