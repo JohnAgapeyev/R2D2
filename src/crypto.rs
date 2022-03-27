@@ -1,55 +1,31 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
+use generic_array;
+use generic_array::typenum::U0;
+use generic_array::typenum::U24;
+use generic_array::typenum::U32;
+use generic_array::GenericArray;
+use rand;
+use rand::rngs::OsRng;
+use rand::RngCore;
+use std::alloc::dealloc;
+use std::alloc::Layout;
+use std::fmt::*;
+use std::marker::PhantomData;
+use std::mem::{size_of, ManuallyDrop};
+use std::ops::Deref;
+use std::ops::DerefMut;
+use std::ptr;
+use typenum;
+use typenum::type_operators::IsEqual;
+use typenum::True;
+use zeroize::Zeroize;
 
-pub use aead;
-pub use aead::{Aead, AeadInPlace, Key, NewAead, Nonce, Tag};
-pub use blake2::Blake2b512;
-pub use chacha20poly1305;
-pub use chacha20poly1305::XChaCha20Poly1305;
-pub use digest;
-pub use digest::Digest;
-pub use generic_array;
-pub use generic_array::typenum::U0;
-pub use generic_array::typenum::U24;
-pub use generic_array::typenum::U32;
-pub use generic_array::typenum::U64;
-pub use generic_array::GenericArray;
-pub use hkdf::SimpleHkdf;
-pub use rand;
-pub use rand::rngs::OsRng;
-pub use rand::CryptoRng;
-pub use rand::RngCore;
-pub use std::alloc::alloc;
-pub use std::alloc::dealloc;
-pub use std::alloc::handle_alloc_error;
-pub use std::alloc::Layout;
-pub use std::fmt;
-pub use std::fmt::*;
-pub use std::marker::PhantomData;
-pub use std::mem;
-pub use std::mem::size_of;
-pub use std::mem::ManuallyDrop;
-pub use std::ops::Deref;
-pub use std::ops::DerefMut;
-pub use std::ptr;
-pub use std::ptr::drop_in_place;
-pub use std::ptr::NonNull;
-pub use typenum;
-pub use typenum::type_operators::IsEqual;
-pub use typenum::True;
-pub use typenum::Unsigned;
-pub use zeroize::Zeroize;
+//Public modules used in generated code
+pub use aead::{self, Aead, AeadInPlace, Key, NewAead, Nonce, Tag};
+pub use chacha20poly1305::{self, XChaCha20Poly1305};
 
-//TODO: Is there a better way to handle this?
+//Workaround to self obfuscate (since we can't add ourselves as a dependency)
+#[allow(unused_imports)]
 use crate as r2d2;
-
-#[derive(Default)]
-struct CryptoCtx {
-    tx_key: [u8; 32],
-    rx_key: [u8; 32],
-    tx_counter: u64,
-    rx_counter: u64,
-}
 
 #[derive(Debug, Default, Hash, PartialEq)]
 pub struct MemoryEncryptionCtx<Cipher>
@@ -406,8 +382,8 @@ where
 
 #[cfg(test)]
 mod enc_box_tests {
-    use crate::EncBox;
-    use crate::XChaCha20Poly1305;
+    use crate::crypto::*;
+    use crate::*;
     #[test]
     fn sanity_check() {
         let basic: String = "FizzBuzz".to_string();
