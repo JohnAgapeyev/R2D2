@@ -383,7 +383,6 @@ where
 #[cfg(test)]
 mod enc_box_tests {
     use crate::crypto::*;
-    use crate::*;
     #[test]
     fn sanity_check() {
         let basic: String = "FizzBuzz".to_string();
