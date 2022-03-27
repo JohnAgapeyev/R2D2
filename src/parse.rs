@@ -4,6 +4,10 @@ use syn::ext::*;
 use syn::parse::*;
 use syn::*;
 
+//Workaround to self obfuscate (since we can't add ourselves as a dependency)
+#[allow(unused_imports)]
+use crate as r2d2;
+
 // The arguments expected by libcore's format_args macro, and as a
 // result most other formatting and printing macros like println.
 //
