@@ -1,4 +1,8 @@
 use quote::*;
+use rand;
+use rand::prelude::*;
+use rand::rngs::OsRng;
+use subtle::*;
 use syn::visit_mut::*;
 use syn::*;
 
@@ -28,19 +32,37 @@ fn generate_shatter_statement() -> Vec<Stmt> {
      * This is also generic enough that Rust source only solutions like kill date will work without
      * any extra parsing or logic
      */
+    let cond_ident = format_ident!(
+        "cond_{}{}{}{}",
+        OsRng.next_u64(),
+        OsRng.next_u64(),
+        OsRng.next_u64(),
+        OsRng.next_u64()
+    );
+    let result_ident = format_ident!(
+        "result_{}{}{}{}",
+        OsRng.next_u64(),
+        OsRng.next_u64(),
+        OsRng.next_u64(),
+        OsRng.next_u64()
+    );
     let tokens = quote! {
         {
-            unsafe {
-                std::arch::asm!(
-                    "nop",
-                    out("rax") _,
-                    //out("rbx") _,
-                    out("rcx") _,
-                    out("rdx") _,
-                    out("rsi") _,
-                    out("rdi") _,
-                    clobber_abi("C"),
-                );
+            let #cond_ident = r2d2::subtle::Choice::from(0u8);
+            let #result_ident = bool::from(#cond_ident);
+            if #result_ident {
+                unsafe {
+                    std::arch::asm!(
+                        "nop",
+                        out("rax") _,
+                        //out("rbx") _,
+                        out("rcx") _,
+                        out("rdx") _,
+                        out("rsi") _,
+                        out("rdi") _,
+                        clobber_abi("C"),
+                    );
+                }
             }
         }
     };
@@ -53,6 +75,16 @@ impl VisitMut for Shatter {
         let mut shattered_stmts: Vec<Stmt> = Vec::new();
 
         for stmt in &mut block.stmts {
+            /*
+             * TODO: Ignore any kind of break/continue/return expressions
+             * Anything injected afterwords is unreachable
+             * Injecting after return expressions is also a compiler error
+             */
+            /*
+             * TODO: Detect whether we're inside an unsafe block already
+             * We can skip any unsafe blocks in the shattered code, which eliminates a compiler
+             * warning on the obfuscated source
+             */
             let can_shatter = match stmt {
                 Stmt::Local(_) => true,
                 Stmt::Item(_) => true,

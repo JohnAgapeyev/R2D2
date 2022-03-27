@@ -14,6 +14,7 @@ pub use generic_array;
 pub use rand;
 pub use rand::prelude::*;
 pub use rand::rngs::OsRng;
+pub use subtle;
 
 //Grab our submodules
 pub mod crypto;
