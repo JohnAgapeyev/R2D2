@@ -1,6 +1,4 @@
-use rand::prelude::SliceRandom;
-use rand::rngs::OsRng;
-use syn::spanned::Spanned;
+use quote::*;
 use syn::visit_mut::*;
 use syn::*;
 
@@ -23,30 +21,64 @@ use arch::*;
 
 struct Shatter;
 
-fn generate_shatter_statement() -> Stmt {
-    unimplemented!();
+fn generate_shatter_statement() -> Vec<Stmt> {
+    /*
+     * Need to wrap the unsafe block in a basic block for parsing to be happy
+     * We want a basic Block type, so we can fetch the vector of statements it generates
+     * This is also generic enough that Rust source only solutions like kill date will work without
+     * any extra parsing or logic
+     */
+    let tokens = quote! {
+        {
+            unsafe {
+                std::arch::asm!(
+                    "nop",
+                    out("rax") _,
+                    //out("rbx") _,
+                    out("rcx") _,
+                    out("rdx") _,
+                    out("rsi") _,
+                    out("rdi") _,
+                    clobber_abi("C"),
+                );
+            }
+        }
+    };
+    let parsed = syn::parse2::<Block>(tokens).unwrap();
+    parsed.stmts
 }
 
 impl VisitMut for Shatter {
     fn visit_block_mut(&mut self, block: &mut Block) {
         let mut shattered_stmts: Vec<Stmt> = Vec::new();
 
-        for stmt in &block.stmts {
+        for stmt in &mut block.stmts {
             let can_shatter = match stmt {
                 Stmt::Local(_) => true,
                 Stmt::Item(_) => true,
-                //Ignore Expr, we only want to shatter near expressions that have semicolons
+                Stmt::Expr(expr) => {
+                    /*
+                     * Need to visit expressions since this will also affect control flow blocks
+                     * Things like Match statements, while loops, if statements, all that fun stuff
+                     * Without this visit, we don't shatter anything inside of any of those, which
+                     * is lame
+                     */
+                    Self::visit_expr_mut(self, expr);
+                    //Ignore Expr, we only want to shatter near expressions that have semicolons
+                    false
+                }
                 Stmt::Semi(_, _) => true,
-                _ => false,
             };
+            shattered_stmts.push(stmt.clone());
             if !can_shatter {
                 continue;
             }
-            shattered_stmts.push(stmt.to_owned());
             //TODO: This is where we can add a random chance to add shatter statement
             if true {
-                shattered_stmts.push(generate_shatter_statement());
+                shattered_stmts.extend_from_slice(&generate_shatter_statement());
             }
+            // Delegate to the default impl to visit nested scopes.
+            Self::visit_stmt_mut(self, stmt);
         }
         block.stmts = shattered_stmts;
     }

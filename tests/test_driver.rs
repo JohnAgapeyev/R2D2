@@ -76,6 +76,9 @@ mod simple {
     #[test]
     fn hello_world_compile() {
         let output = compile_test("tests/single/01-hello_world");
+
+        io::stdout().write_all(&output.stdout).unwrap();
+        io::stderr().write_all(&output.stderr).unwrap();
         assert!(output.status.success());
     }
 
