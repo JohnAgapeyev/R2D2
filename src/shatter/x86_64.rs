@@ -58,6 +58,10 @@ use rand;
 use rand::prelude::*;
 use rand::rngs::OsRng;
 
+//Workaround to self obfuscate (since we can't add ourselves as a dependency)
+#[allow(unused_imports)]
+use crate as r2d2;
+
 const PARTIAL_PREFIXES: &str = include_str!("x86_64_prefixes.json");
 
 pub fn generate_partial_instruction() -> Vec<u8> {
