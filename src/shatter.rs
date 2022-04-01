@@ -18,9 +18,8 @@ mod x86;
 mod x86_64;
 
 //Conditional use statements to bring the right backend into scope
-#[cfg(target_arch = "x86")]
-use crate::shatter::x86 as arch;
-#[cfg(target_arch = "x86_64")]
+//Currently use the x64 backend for x86 until we need 32-bit exclusive options
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::shatter::x86_64 as arch;
 
 struct Shatter {
