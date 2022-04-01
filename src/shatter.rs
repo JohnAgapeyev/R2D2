@@ -14,7 +14,6 @@ use crate::parse::*;
 use crate as r2d2;
 
 //All the arch backend modules
-mod x86;
 mod x86_64;
 
 //Conditional use statements to bring the right backend into scope
