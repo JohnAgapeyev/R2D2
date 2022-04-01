@@ -16,17 +16,16 @@ members = ["./", "tests/single/*"]
 lazy_static = "1.4.0"
 
 [dependencies]
-zeroize = { version = "1.4.3", features = ["alloc", "zeroize_derive"]}
-rand = { version = "0.8", features = ["getrandom", "std"]}
-digest = { version = "0.9", features = ["std"]}
+serde = { version = "1.0", features = ["std", "alloc", "derive"]}
+serde_json = "1.0"
 generic-array = "0.14"
 typenum = "1.14"
+digest = { version = "0.9", features = ["std"]}
 aead = { version = "0.4", features = ["alloc", "rand_core"]}
-aes-gcm = { version = "0.9", features = ["alloc"]}
-aes-gcm-siv = { version = "0.10", features = ["alloc"]}
+zeroize = { version = "1.4.3", features = ["alloc", "zeroize_derive"]}
+rand = { version = "0.8", features = ["getrandom", "std"]}
+subtle = "2.4.1"
 chacha20poly1305 = { version = "0.9", features = ["alloc"]}
-hkdf = "0.12.3"
-blake2 = "0.10.4"
 syn = { version = "1.0.85", features = ["full", "visit", "visit-mut", "fold", "extra-traits"] }
 quote = "1.0.14"
 proc-macro2 = "1.0.36"
@@ -35,7 +34,6 @@ walkdir = "2.3.2"
 cargo_metadata = "0.14.1"
 camino = "1.0.7"
 clap = { version = "~3.0.13", features = ["cargo", "env", "regex", "unicode", "wrap_help"] }
-subtle = "2.4.1"
 
 [profile.release]
 strip = true

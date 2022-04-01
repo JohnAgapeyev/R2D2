@@ -23,26 +23,28 @@ use crate::shatter::x86 as arch;
 #[cfg(target_arch = "x86_64")]
 use crate::shatter::x86_64 as arch;
 
-//Import all the arch backend symbols
-use arch::*;
-
 struct Shatter {
     inside_unsafe_block: bool,
 }
 
 impl Shatter {
     fn generate_garbage_asm(&self) -> TokenStream {
-        let between = Uniform::from(8..32);
-        let garbage_len: usize = between.sample(&mut OsRng);
+        let mut garbage: Vec<u8> = arch::generate_partial_instruction();
 
-        let mut garbage: Vec<u8> = Vec::with_capacity(garbage_len);
+        if garbage.is_empty() {
+            //Fallback to random bytes
+            let between = Uniform::from(32..96);
+            let garbage_len: usize = between.sample(&mut OsRng);
 
-        while garbage.len() < garbage_len {
-            let data = OsRng.next_u64().to_ne_bytes();
-            garbage.extend_from_slice(&data);
+            garbage = Vec::with_capacity(garbage_len);
+
+            while garbage.len() < garbage_len {
+                let data = OsRng.next_u64().to_ne_bytes();
+                garbage.extend_from_slice(&data);
+            }
+            //Truncate in case the loop over extended the vec
+            garbage.truncate(garbage_len);
         }
-        //Truncate in case the loop over extended the vec
-        garbage.truncate(garbage_len);
 
         let mut asm_byte_strings = TokenStream::new();
 
