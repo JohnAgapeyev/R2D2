@@ -39,3 +39,4 @@ subtle = "2.4.1"
 
 [profile.release]
 strip = true
+panic = "abort"

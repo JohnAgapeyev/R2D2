@@ -1,6 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::*;
 use rand;
+use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::rngs::OsRng;
 use syn::visit_mut::*;
@@ -30,6 +31,40 @@ struct Shatter {
 }
 
 impl Shatter {
+    fn generate_garbage_asm(&self) -> TokenStream {
+        let between = Uniform::from(8..32);
+        let garbage_len: usize = between.sample(&mut OsRng);
+
+        let mut garbage: Vec<u8> = Vec::with_capacity(garbage_len);
+
+        while garbage.len() < garbage_len {
+            let data = OsRng.next_u64().to_ne_bytes();
+            garbage.extend_from_slice(&data);
+        }
+        //Truncate in case the loop over extended the vec
+        garbage.truncate(garbage_len);
+
+        let mut asm_byte_strings = TokenStream::new();
+
+        for byte in garbage {
+            let byte_string = format!(".byte 0x{:X};", byte);
+            asm_byte_strings.extend(quote! {
+                #byte_string,
+            });
+        }
+
+        let body_content = quote! {
+            std::arch::asm!(
+                //This expansion has a trailing comma
+                #asm_byte_strings
+                //Not currently doing any explicit register clobbering here, but it's garbage, so
+                //who cares
+                clobber_abi("C"),
+            );
+        };
+        body_content
+    }
+
     fn generate_shatter_statement(&self) -> Vec<Stmt> {
         /*
          * Need to wrap the unsafe block in a basic block for parsing to be happy
@@ -52,18 +87,7 @@ impl Shatter {
             OsRng.next_u64()
         );
 
-        let body_content = quote! {
-            std::arch::asm!(
-                "nop",
-                out("rax") _,
-                //out("rbx") _,
-                out("rcx") _,
-                out("rdx") _,
-                out("rsi") _,
-                out("rdi") _,
-                clobber_abi("C"),
-            );
-        };
+        let body_content = self.generate_garbage_asm();
 
         let body: TokenStream;
         if self.inside_unsafe_block {

@@ -39,6 +39,14 @@
  *      //r for register, m for memory, i for immediate
  *      { "adc {r}, {ri}", CONSTRAINT::NONE },
  *      { "mov {rm}, {rmi}", CONSTRAINT::NO_MEM_MEM },
+ *
+ *      { "adc {}, {}", vec![vec![ARGS::REGISTER], vec![ARGS::REGISTER, ARGS::IMMEDIATE]], vec![CONSTRAINT::NONE] },
+ *
+ *
+ *
+ *
+ *
+ *      { "op": "adc {}, {}", "args": [[ARGS::REGISTER], [ARGS::REGISTER, ARGS::IMMEDIATE]], "constraints": [CONSTRAINT::NONE] },
  * ];
  * garbage = [
  *      //I don't even know what this would be, it's just an example
