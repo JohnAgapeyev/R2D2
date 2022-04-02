@@ -21,6 +21,13 @@ mod x86_64;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::shatter::x86_64 as arch;
 
+enum ShatterType {
+    //Garbage code to foil static analysis tools, never executed
+    STATIC,
+    //Meaningless false execution paths to confuse dynamic analysis, may execute, ending in a crash
+    DYNAMIC,
+}
+
 struct Shatter {
     inside_unsafe_block: bool,
 }
@@ -65,7 +72,40 @@ impl Shatter {
         body_content
     }
 
-    fn generate_shatter_statement(&self) -> Vec<Stmt> {
+    fn generate_rabbit_hole(&self) -> TokenStream {
+        let rabbit_hole = arch::generate_rabbit_hole();
+        //TODO: Have non-asm rabbit holes, and randomly choose between asm and generic here
+        rabbit_hole
+    }
+
+    fn generate_shatter_statement(&self, shatter_type: ShatterType) -> Vec<Stmt> {
+        let body_content = match shatter_type {
+            ShatterType::STATIC => self.generate_garbage_asm(),
+            ShatterType::DYNAMIC => self.generate_rabbit_hole(),
+        };
+
+        let body: TokenStream;
+        if self.inside_unsafe_block {
+            body = quote! {
+                #body_content
+            };
+        } else {
+            body = quote! {
+                unsafe {
+                    #body_content
+                }
+            };
+        }
+        let tokens = quote! {
+            {
+                #body
+            }
+        };
+        let parsed = syn::parse2::<Block>(tokens).unwrap();
+        parsed.stmts
+    }
+
+    fn generate_false_branch(&self) -> Vec<Stmt> {
         /*
          * Need to wrap the unsafe block in a basic block for parsing to be happy
          * We want a basic Block type, so we can fetch the vector of statements it generates
@@ -87,26 +127,13 @@ impl Shatter {
             OsRng.next_u64()
         );
 
-        let body_content = self.generate_garbage_asm();
-
-        let body: TokenStream;
-        if self.inside_unsafe_block {
-            body = quote! {
-                #body_content
-            };
-        } else {
-            body = quote! {
-                unsafe {
-                    #body_content
-                }
-            };
-        }
+        let body = self.generate_shatter_statement(ShatterType::STATIC);
         let tokens = quote! {
             {
                 let #cond_ident = r2d2::subtle::Choice::from(0u8);
                 let #result_ident = bool::from(#cond_ident);
                 if #result_ident {
-                    #body
+                    #(#body)*
                 }
             }
         };
@@ -148,7 +175,7 @@ impl Shatter {
             };
         }
 
-        let body = self.generate_shatter_statement();
+        let body = self.generate_shatter_statement(ShatterType::DYNAMIC);
 
         let replacement = quote! {
             {
@@ -270,7 +297,7 @@ impl VisitMut for Shatter {
             } else {
                 //TODO: This is where we can add a random chance to add shatter statement
                 if true {
-                    shattered_stmts.extend_from_slice(&self.generate_shatter_statement());
+                    shattered_stmts.extend_from_slice(&self.generate_false_branch());
                 }
             }
             // Delegate to the default impl to visit nested scopes.

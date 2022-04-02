@@ -54,7 +54,10 @@
  * ];
  */
 
+use proc_macro2::TokenStream;
+use quote::*;
 use rand;
+use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::rngs::OsRng;
 
@@ -73,4 +76,56 @@ pub fn generate_partial_instruction() -> Vec<u8> {
     let instruction = underlying.choose(&mut OsRng).unwrap();
     let encoding = instruction.choose(&mut OsRng).unwrap();
     encoding.to_owned()
+}
+
+pub fn generate_rabbit_hole() -> TokenStream {
+    //TODO: Extend the selection to have more than 1 kind of rabbit hole
+
+    let between = Uniform::from(64..200);
+    let byte_count: usize = between.sample(&mut OsRng);
+    let offset = byte_count / 2;
+    //let constant: u32 = OsRng.next_u32();
+    let constant: u8 = between.sample(&mut OsRng) as u8;
+
+    //TODO: This is not working as intended, need to debug further, mess around with constants and
+    //register sizing
+    let init_loop = format!("mov eax, {byte_count}");
+    let init_loop2 = format!("mov edx, {byte_count}");
+    let xor = format!("xor cl, 0x{constant:X}");
+    let sub = format!("sub esp, {offset}");
+
+    let body_content = quote! {
+        eprintln!("Bad juju is running");
+        std::arch::asm!(
+            //eax holds the loop counter
+            #init_loop,
+            //edx holds the loop counter
+            #init_loop2,
+            //edx holds the negative loop counter
+            "neg edx",
+            //Loop label
+            "2:",
+            //Move the stack bytes into ecx (need to add for addressing, hence negate edx first)
+            "mov al, [esp + edx]",
+            //Xor the byte out
+            #xor,
+            //Write the byte back
+            "mov [esp + edx], cl",
+            //Decrement loop counter
+            "dec eax",
+            //Increment (from negative towards zero) the memory offset
+            "add edx, 1",
+            //Test the loop condition
+            "test eax, 0",
+            //Jump if loop is active
+            "jnz 2b",
+            //Offset the existing stack pointer into the middle of the corruption
+            #sub,
+            //Jump to that new offset stack
+            "jmp [esp]",
+            //Not currently doing any explicit register clobbering here, but it's garbage, so who cares
+            clobber_abi("C"),
+        );
+    };
+    body_content
 }
