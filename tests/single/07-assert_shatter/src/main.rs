@@ -2,8 +2,6 @@ fn main() {
     let x = 7;
     println!("X is {x}");
     assert!(x == 7);
-    //THIS IS A TEST TO VERIFY DYNAMIC ASSERT FAILURE EXECUTION
-    assert!(x != 7);
     println!("After assert 1");
     assert!(x == 7, "I don't really trust that it's actually 7");
     println!("After assert 2");
