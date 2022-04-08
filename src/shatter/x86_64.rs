@@ -81,49 +81,29 @@ pub fn generate_partial_instruction() -> Vec<u8> {
 pub fn generate_rabbit_hole() -> TokenStream {
     //TODO: Extend the selection to have more than 1 kind of rabbit hole
 
-    let between = Uniform::from(64..200);
-    let byte_count: usize = between.sample(&mut OsRng);
-    let offset = byte_count / 2;
-    //let constant: u32 = OsRng.next_u32();
-    let constant: u8 = between.sample(&mut OsRng) as u8;
+    let between = Uniform::from(1..33);
+    let rot: usize = between.sample(&mut OsRng);
 
-    //TODO: This is not working as intended, need to debug further, mess around with constants and
-    //register sizing
-    let init_loop = format!("mov eax, {byte_count}");
-    let init_loop2 = format!("mov edx, {byte_count}");
-    let xor = format!("xor cl, 0x{constant:X}");
-    let sub = format!("sub esp, {offset}");
+    let data = format!(
+        "\
+        mov rax, rsp; \
+        rcl rax, {rot}; \
+        mov rsp, r14; \
+        mov rbx, r9; \
+        mov rdi, r8; \
+        mov r8, rsi; \
+        mov rsi, rbp; \
+        rcr rsi, {rot}; \
+        mov rbp, r10; \
+        mov rcx, r11; \
+        mov rdx, r12; \
+        jmp [rax + 8*rbx + rsi]; \
+        "
+    );
 
     let body_content = quote! {
-        eprintln!("Bad juju is running");
         std::arch::asm!(
-            //eax holds the loop counter
-            #init_loop,
-            //edx holds the loop counter
-            #init_loop2,
-            //edx holds the negative loop counter
-            "neg edx",
-            //Loop label
-            "2:",
-            //Move the stack bytes into ecx (need to add for addressing, hence negate edx first)
-            "mov al, [esp + edx]",
-            //Xor the byte out
-            #xor,
-            //Write the byte back
-            "mov [esp + edx], cl",
-            //Decrement loop counter
-            "dec eax",
-            //Increment (from negative towards zero) the memory offset
-            "add edx, 1",
-            //Test the loop condition
-            "test eax, 0",
-            //Jump if loop is active
-            "jnz 2b",
-            //Offset the existing stack pointer into the middle of the corruption
-            #sub,
-            //Jump to that new offset stack
-            "jmp [esp]",
-            //Not currently doing any explicit register clobbering here, but it's garbage, so who cares
+            #data,
             clobber_abi("C"),
         );
     };
