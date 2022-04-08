@@ -28,11 +28,60 @@ enum ShatterType {
     DYNAMIC,
 }
 
+enum ConditionType {
+    //Just a fancy "if false" condition
+    FALSE,
+    //Anti-debug check logic
+    DEBUG,
+    //Verify the in-memory integrity of the executable
+    INTEGRITY,
+    //Kill date verification (super simple, enforced by integrity checks)
+    KILLDATE,
+}
+
 struct Shatter {
     inside_unsafe_block: bool,
 }
 
+struct ShatterCondition {
+    setup: TokenStream,
+    check: TokenStream,
+}
+
 impl Shatter {
+
+    fn generate_false_condition(&self) -> ShatterCondition {
+        let cond_ident = format_ident!(
+            "cond_{}{}{}{}",
+            OsRng.next_u64(),
+            OsRng.next_u64(),
+            OsRng.next_u64(),
+            OsRng.next_u64()
+        );
+        let result_ident = format_ident!(
+            "result_{}{}{}{}",
+            OsRng.next_u64(),
+            OsRng.next_u64(),
+            OsRng.next_u64(),
+            OsRng.next_u64()
+        );
+        let setup = quote! {
+            let #cond_ident = r2d2::subtle::Choice::from(0u8);
+            let #result_ident = bool::from(#cond_ident);
+        };
+        let check = quote! {
+            #result_ident
+        };
+        ShatterCondition { setup, check }
+    }
+
+    fn generate_branch_condition(&self) -> ShatterCondition {
+        if true {
+            return self.generate_false_condition();
+        }
+        unimplemented!();
+    }
+
     fn generate_garbage_asm(&self) -> TokenStream {
         let mut garbage: Vec<u8> = arch::generate_partial_instruction();
 
@@ -105,34 +154,13 @@ impl Shatter {
         parsed.stmts
     }
 
-    fn generate_false_branch(&self) -> Vec<Stmt> {
-        /*
-         * Need to wrap the unsafe block in a basic block for parsing to be happy
-         * We want a basic Block type, so we can fetch the vector of statements it generates
-         * This is also generic enough that Rust source only solutions like kill date will work without
-         * any extra parsing or logic
-         */
-        let cond_ident = format_ident!(
-            "cond_{}{}{}{}",
-            OsRng.next_u64(),
-            OsRng.next_u64(),
-            OsRng.next_u64(),
-            OsRng.next_u64()
-        );
-        let result_ident = format_ident!(
-            "result_{}{}{}{}",
-            OsRng.next_u64(),
-            OsRng.next_u64(),
-            OsRng.next_u64(),
-            OsRng.next_u64()
-        );
-
+    fn inject_branch(&self) -> Vec<Stmt> {
+        let ShatterCondition { setup, check } = self.generate_branch_condition();
         let body = self.generate_shatter_statement(ShatterType::STATIC);
         let tokens = quote! {
             {
-                let #cond_ident = r2d2::subtle::Choice::from(0u8);
-                let #result_ident = bool::from(#cond_ident);
-                if #result_ident {
+                #setup
+                if #check {
                     #(#body)*
                 }
             }
@@ -297,7 +325,7 @@ impl VisitMut for Shatter {
             } else {
                 //TODO: This is where we can add a random chance to add shatter statement
                 if true {
-                    shattered_stmts.extend_from_slice(&self.generate_false_branch());
+                    shattered_stmts.extend_from_slice(&self.inject_branch());
                 }
             }
             // Delegate to the default impl to visit nested scopes.
