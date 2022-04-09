@@ -15,6 +15,7 @@ lazy_static! {
     static ref FILESYSTEM_MUTEX: Mutex<()> = Mutex::new(());
 }
 
+//TODO: Figure out a nice way to handle output gathering without constantly modifying this file
 fn setup_test_crate(path: &str) -> io::Result<(Utf8PathBuf, Utf8PathBuf)> {
     /*
      * Don't need to override src dir due to dependency resolution

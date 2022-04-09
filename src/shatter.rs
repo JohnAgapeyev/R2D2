@@ -17,8 +17,7 @@ use crate as r2d2;
 mod x86_64;
 
 //Conditional use statements to bring the right backend into scope
-//Currently use the x64 backend for x86 until we need 32-bit exclusive options
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(target_arch = "x86_64")]
 use crate::shatter::x86_64 as arch;
 
 enum ShatterType {
@@ -49,7 +48,6 @@ struct ShatterCondition {
 }
 
 impl Shatter {
-
     fn generate_false_condition(&self) -> ShatterCondition {
         let cond_ident = format_ident!(
             "cond_{}{}{}{}",
@@ -75,11 +73,42 @@ impl Shatter {
         ShatterCondition { setup, check }
     }
 
+    //TODO: Implement
+    fn generate_anti_debug_check(&self) -> ShatterCondition {
+        let setup = quote! {};
+        let check = quote! { false };
+        ShatterCondition { setup, check }
+    }
+
+    //TODO: Implement
+    fn generate_integrity_check(&self) -> ShatterCondition {
+        let setup = quote! {};
+        let check = quote! { false };
+        ShatterCondition { setup, check }
+    }
+
+    //TODO: Implement
+    fn generate_kill_date_check(&self) -> ShatterCondition {
+        let setup = quote! {};
+        let check = quote! { false };
+        ShatterCondition { setup, check }
+    }
+
     fn generate_branch_condition(&self) -> ShatterCondition {
-        if true {
-            return self.generate_false_condition();
+        let conditions: Vec<ConditionType> = vec![
+            ConditionType::FALSE,
+            ConditionType::DEBUG,
+            ConditionType::INTEGRITY,
+            ConditionType::KILLDATE,
+        ];
+
+        let cond_type = conditions.choose(&mut OsRng).unwrap();
+        match cond_type {
+            ConditionType::FALSE => self.generate_false_condition(),
+            ConditionType::DEBUG => self.generate_anti_debug_check(),
+            ConditionType::INTEGRITY => self.generate_integrity_check(),
+            ConditionType::KILLDATE => self.generate_kill_date_check(),
         }
-        unimplemented!();
     }
 
     fn generate_garbage_asm(&self) -> TokenStream {
