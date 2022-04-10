@@ -36,6 +36,18 @@ camino = "1.0.7"
 clap = { version = "~3.0.13", features = ["cargo", "env", "regex", "unicode", "wrap_help"] }
 goblin = { version = "0.5.1", features = ["default"] }
 
+#Target with the cfg(windows) to make it conditional on windows build target
+#Add the .dependencies to specify dependencies like normal
+#Add the .windows to specify the windows crate dependencies (may want to adjust if I have a lot of windows specific deps)
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.35"
+features = [
+    "alloc",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+]
+
 [profile.release]
 strip = true
 panic = "abort"
