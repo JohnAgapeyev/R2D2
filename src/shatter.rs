@@ -14,12 +14,33 @@ use crate::parse::*;
 #[allow(unused_imports)]
 use crate as r2d2;
 
-//All the arch backend modules
+/*
+ * ********************************************
+ * Arch backends
+ * ********************************************
+ */
+//x86_64
+#[cfg(target_arch = "x86_64")]
 mod x86_64;
-
-//Conditional use statements to bring the right backend into scope
 #[cfg(target_arch = "x86_64")]
 use crate::shatter::x86_64 as arch;
+
+/*
+ * ********************************************
+ * OS backends
+ * ********************************************
+ */
+//Linux
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+use crate::shatter::linux as os;
+
+//Windows
+#[cfg(target_os = "windows")]
+mod windows;
+#[cfg(target_os = "windows")]
+use crate::shatter::windows as os;
 
 const DEBUG_KILLDATE_DURATION_SECS: u64 = 60;
 
@@ -45,7 +66,7 @@ struct Shatter {
     inside_unsafe_block: bool,
 }
 
-struct ShatterCondition {
+pub struct ShatterCondition {
     setup: TokenStream,
     check: TokenStream,
 }
@@ -77,16 +98,12 @@ impl Shatter {
 
     //TODO: Implement
     fn generate_anti_debug_check(&self) -> ShatterCondition {
-        let setup = quote! {};
-        let check = quote! { false };
-        ShatterCondition { setup, check }
+        os::generate_anti_debug_check()
     }
 
     //TODO: Implement
     fn generate_integrity_check(&self) -> ShatterCondition {
-        let setup = quote! {};
-        let check = quote! { false };
-        ShatterCondition { setup, check }
+        os::generate_integrity_check()
     }
 
     fn generate_kill_date_check(&self) -> ShatterCondition {
