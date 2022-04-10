@@ -66,6 +66,8 @@ struct Shatter {
     inside_unsafe_block: bool,
 }
 
+//TODO: Is it better to type check this and pay the double conversion cost?
+//Debugging improper injection code is a royal pain
 pub struct ShatterCondition {
     setup: TokenStream,
     check: TokenStream,
