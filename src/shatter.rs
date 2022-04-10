@@ -4,6 +4,7 @@ use rand;
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::rngs::OsRng;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use syn::visit_mut::*;
 use syn::*;
 
@@ -19,6 +20,8 @@ mod x86_64;
 //Conditional use statements to bring the right backend into scope
 #[cfg(target_arch = "x86_64")]
 use crate::shatter::x86_64 as arch;
+
+const DEBUG_KILLDATE_DURATION_SECS: u64 = 60;
 
 enum ShatterType {
     //Garbage code to foil static analysis tools, never executed
@@ -47,22 +50,21 @@ struct ShatterCondition {
     check: TokenStream,
 }
 
+fn generate_unique_ident() -> proc_macro2::Ident {
+    //Append a random 256 bit integer, if this ever has a collision, buy a lottery ticket!
+    format_ident!(
+        "var_{:x}{:x}{:x}{:x}",
+        OsRng.next_u64(),
+        OsRng.next_u64(),
+        OsRng.next_u64(),
+        OsRng.next_u64()
+    )
+}
+
 impl Shatter {
     fn generate_false_condition(&self) -> ShatterCondition {
-        let cond_ident = format_ident!(
-            "cond_{}{}{}{}",
-            OsRng.next_u64(),
-            OsRng.next_u64(),
-            OsRng.next_u64(),
-            OsRng.next_u64()
-        );
-        let result_ident = format_ident!(
-            "result_{}{}{}{}",
-            OsRng.next_u64(),
-            OsRng.next_u64(),
-            OsRng.next_u64(),
-            OsRng.next_u64()
-        );
+        let cond_ident = generate_unique_ident();
+        let result_ident = generate_unique_ident();
         let setup = quote! {
             let #cond_ident = r2d2::subtle::Choice::from(0u8);
             let #result_ident = bool::from(#cond_ident);
@@ -87,10 +89,36 @@ impl Shatter {
         ShatterCondition { setup, check }
     }
 
-    //TODO: Implement
     fn generate_kill_date_check(&self) -> ShatterCondition {
-        let setup = quote! {};
-        let check = quote! { false };
+        let epoch_now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        let target_date_seconds = option_env!("KILLDATE");
+        let target_duration: Duration;
+
+        if let Some(secs) = target_date_seconds {
+            //Killdate was passed as a parameter
+            let parsed_killdate = secs.parse::<u64>().unwrap();
+            target_duration = Duration::from_secs(parsed_killdate);
+            if target_duration <= epoch_now {
+                //Killdate is in the past
+                panic!("CANNOT USE KILLDATE IN THE PAST");
+            }
+        } else {
+            //Killdate wasn't passed, let's use a default value for testing
+            if !cfg!(debug_assertions) {
+                panic!("REFUSING TO USE DEFAULT KILLDATE IN RELEASE MODE");
+            }
+            target_duration = epoch_now + Duration::from_secs(DEBUG_KILLDATE_DURATION_SECS);
+        }
+
+        let now_ident = generate_unique_ident();
+        let target_secs = target_duration.as_secs();
+
+        let setup = quote! {
+            let #now_ident = ::std::time::SystemTime::now().duration_since(::std::time::UNIX_EPOCH).unwrap();
+        };
+        let check = quote! {
+            #now_ident.as_secs() >= #target_secs
+        };
         ShatterCondition { setup, check }
     }
 
