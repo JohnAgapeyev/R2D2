@@ -113,12 +113,16 @@ mod single {
         assert!(output.status.success());
     }
 
-    #[test]
-    fn crazy_compile() {
-        let output = compile_test("tests/single/03-crazy");
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
-        assert!(output.status.success());
+    #[cfg(target_os = "linux")]
+    mod linux {
+        use crate::*;
+        #[test]
+        fn crazy_compile() {
+            let output = compile_test("tests/single/03-crazy");
+            io::stdout().write_all(&output.stdout).unwrap();
+            io::stderr().write_all(&output.stderr).unwrap();
+            assert!(output.status.success());
+        }
     }
 
     #[test]
