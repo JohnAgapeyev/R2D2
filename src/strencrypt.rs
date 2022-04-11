@@ -86,29 +86,30 @@ impl VisitMut for StrReplace {
         }
 
         if let Ok(mut parsed) = node.parse_body::<FormatArgs>() {
-            if let Expr::Lit(expr) = &parsed.format_string {
-                if let Lit::Str(s) = &expr.lit {
-                    if s.value().contains("{") {
-                        //Don't mess with format strings that aren't trivial
-                        can_encrypt = false;
-                    }
-                } else {
-                    panic!("Format string is not a string literal!");
+            if let Lit::Str(s) = &parsed.format_string.lit {
+                if s.value().contains("{") {
+                    //Don't mess with format strings that aren't trivial
+                    can_encrypt = false;
                 }
             } else {
-                panic!("Format string is not a literal expression!");
+                panic!("Format string is not a string literal!");
             }
 
             if parsed.positional_args.is_empty() && parsed.named_args.is_empty() && can_encrypt {
                 //Change the string literal to ("{}", "str") to allow block expression replacement
                 let span = parsed.format_string.span();
-                parsed.positional_args.push(std::mem::replace(
-                    &mut parsed.format_string,
-                    Expr::Lit(ExprLit {
-                        attrs: Vec::new(),
-                        lit: Lit::Str(LitStr::new("{}", span)),
-                    }),
-                ));
+
+                //Store the old value as an arg
+                parsed
+                    .positional_args
+                    .push(Expr::Lit(parsed.format_string.to_owned()));
+
+                //Replace the format string with a trivial one
+                parsed.format_string = ExprLit {
+                    attrs: Vec::new(),
+                    lit: Lit::Str(LitStr::new("{}", span)),
+                };
+
                 Self::visit_expr_mut(self, &mut parsed.positional_args[0]);
             } else {
                 parsed

@@ -14,14 +14,14 @@ use crate as r2d2;
 //     println!("{} is {number:.prec$}", "x", prec=5, number=0.01)
 #[derive(Debug)]
 pub struct FormatArgs {
-    pub format_string: Expr,
+    pub format_string: ExprLit,
     pub positional_args: Vec<Expr>,
     pub named_args: Vec<(Ident, Expr)>,
 }
 
 impl Parse for FormatArgs {
     fn parse(input: ParseStream) -> syn::parse::Result<Self> {
-        let format_string: Expr;
+        let format_string: ExprLit;
         let mut positional_args = Vec::new();
         let mut named_args = Vec::new();
 
