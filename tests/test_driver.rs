@@ -7,7 +7,7 @@ use std::io;
 use std::io::Write;
 use std::process::Command;
 use std::process::Output;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 const TEST_DIRECTORY: &str = ".r2d2_test_dir";
 
@@ -45,8 +45,20 @@ fn setup_test_crate(path: &str) -> io::Result<(Utf8PathBuf, Utf8PathBuf)> {
     Ok((src.target_dir, true_dest))
 }
 
+fn lock_filesystem() -> MutexGuard<'static, ()> {
+    /*
+     * Ignore filesystem mutex poisoning
+     * The failures will be due to crashes in tests, and we test from a clean slate anyhow
+     * Don't need to have extraneous test failures
+     */
+    match FILESYSTEM_MUTEX.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
 fn compile_test(path: &str) -> Output {
-    let _lock = FILESYSTEM_MUTEX.lock().unwrap();
+    let _lock = lock_filesystem();
     let (src, dest) = setup_test_crate(path).unwrap();
 
     Command::new("cargo")
@@ -59,7 +71,7 @@ fn compile_test(path: &str) -> Output {
 }
 
 fn functional_test(path: &str) -> Output {
-    let _lock = FILESYSTEM_MUTEX.lock().unwrap();
+    let _lock = lock_filesystem();
     let (src, dest) = setup_test_crate(path).unwrap();
 
     Command::new("cargo")
@@ -164,5 +176,18 @@ mod single {
 
         io::stdout().write_all(&output.stdout).unwrap();
         io::stderr().write_all(&output.stderr).unwrap();
+    }
+}
+
+mod complex {
+    use crate::*;
+
+    #[test]
+    fn rand_compile() {
+        let output = compile_test("tests/complex/rand");
+
+        io::stdout().write_all(&output.stdout).unwrap();
+        io::stderr().write_all(&output.stderr).unwrap();
+        assert!(output.status.success());
     }
 }

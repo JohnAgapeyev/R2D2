@@ -67,6 +67,7 @@ rand_core = { path = "rand_core", version = "0.6.0" }
 log = { version = "0.4.4", optional = true }
 serde = { version = "1.0.103", features = ["derive"], optional = true }
 rand_chacha = { path = "rand_chacha", version = "0.3.0", default-features = false, optional = true }
+r2d2 = { path = "../../../" }
 
 [dependencies.packed_simd]
 # NOTE: so far no version works reliably due to dependence on unstable features
