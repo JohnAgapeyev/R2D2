@@ -123,6 +123,24 @@ impl VisitMut for StrReplace {
     }
 
     fn visit_expr_mut(&mut self, node: &mut Expr) {
+        /*
+         * Skip function call expressions
+         * This is a case of lifetime scoping problems
+         * Given a function foo("hello"), only a String type would support decryption
+         * If the function takes a &str, the temporary will go out of scope and fail to compile
+         * I'm not about to become a linker, so this has to be skipped
+         * Best case is to limit/audit string literals to prevent this case
+         */
+        let must_skip = match &node {
+            Expr::Call(_) => true,
+            Expr::MethodCall(_) => true,
+            _ => false,
+        };
+
+        if must_skip {
+            return;
+        }
+
         if let Expr::Lit(expr) = &node {
             if let Lit::Str(s) = &expr.lit {
                 let mem_ctx = MemEncCtx {
