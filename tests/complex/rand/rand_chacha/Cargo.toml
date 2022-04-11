@@ -18,6 +18,7 @@ edition = "2018"
 rand_core = { path = "../rand_core", version = "0.6.0" }
 ppv-lite86 = { version = "0.2.14", default-features = false, features = ["simd"] }
 serde = { version = "1.0", features = ["derive"], optional = true }
+r2d2 = { path = "../../../../" }
 
 [dev-dependencies]
 # Only to test serde1

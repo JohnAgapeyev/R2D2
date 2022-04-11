@@ -54,12 +54,12 @@
  * ];
  */
 
-use proc_macro2::TokenStream;
-use quote::*;
+use quote::quote;
 use rand;
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::rngs::OsRng;
+use syn::Block;
 
 //Workaround to self obfuscate (since we can't add ourselves as a dependency)
 #[allow(unused_imports)]
@@ -78,7 +78,7 @@ pub fn generate_partial_instruction() -> Vec<u8> {
     encoding.to_owned()
 }
 
-pub fn generate_rabbit_hole() -> TokenStream {
+pub fn generate_rabbit_hole() -> Block {
     //TODO: Extend the selection to have more than 1 kind of rabbit hole
 
     let between = Uniform::from(1..33);
@@ -102,10 +102,12 @@ pub fn generate_rabbit_hole() -> TokenStream {
     );
 
     let body_content = quote! {
-        std::arch::asm!(
-            #data,
-            clobber_abi("C"),
-        );
+        {
+            std::arch::asm!(
+                #data,
+                clobber_abi("C"),
+            );
+        }
     };
-    body_content
+    syn::parse2::<Block>(body_content).unwrap()
 }

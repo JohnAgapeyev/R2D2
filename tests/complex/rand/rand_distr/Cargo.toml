@@ -26,6 +26,7 @@ serde1 = ["serde", "rand/serde1"]
 rand = { path = "..", version = "0.8.0", default-features = false }
 num-traits = { version = "0.2", default-features = false, features = ["libm"] }
 serde = { version = "1.0.103", features = ["derive"], optional = true }
+r2d2 = { path = "../../../../" }
 
 [dev-dependencies]
 rand_pcg = { version = "0.3.0", path = "../rand_pcg" }

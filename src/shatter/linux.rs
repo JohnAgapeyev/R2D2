@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use goblin::{elf, elf64, error};
 use proc_macro2::TokenStream;
 use quote::*;

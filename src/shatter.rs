@@ -5,6 +5,8 @@ use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::rngs::OsRng;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use syn::spanned::Spanned;
+use syn::token::Brace;
 use syn::visit_mut::*;
 use syn::*;
 
@@ -158,7 +160,7 @@ impl Shatter {
         }
     }
 
-    fn generate_garbage_asm(&self) -> TokenStream {
+    fn generate_garbage_asm(&self) -> Block {
         let mut garbage: Vec<u8> = arch::generate_partial_instruction();
 
         if garbage.is_empty() {
@@ -186,24 +188,25 @@ impl Shatter {
         }
 
         let body_content = quote! {
-            std::arch::asm!(
-                //This expansion has a trailing comma
-                #asm_byte_strings
-                //Not currently doing any explicit register clobbering here, but it's garbage, so
-                //who cares
-                clobber_abi("C"),
-            );
+            {
+                std::arch::asm!(
+                    //This expansion has a trailing comma
+                    #asm_byte_strings
+                    //Not currently doing any explicit register clobbering here, but it's garbage, so
+                    //who cares
+                    clobber_abi("C"),
+                );
+            }
         };
-        body_content
+        syn::parse2::<Block>(body_content).unwrap()
     }
 
-    fn generate_rabbit_hole(&self) -> TokenStream {
-        let rabbit_hole = arch::generate_rabbit_hole();
+    fn generate_rabbit_hole(&self) -> Block {
         //TODO: Have non-asm rabbit holes, and randomly choose between asm and generic here
-        rabbit_hole
+        arch::generate_rabbit_hole()
     }
 
-    fn generate_shatter_statement(&self, shatter_type: ShatterType) -> Vec<Stmt> {
+    fn generate_shatter_statement(&self, shatter_type: ShatterType) -> Block {
         let body_content = match shatter_type {
             ShatterType::STATIC => self.generate_garbage_asm(),
             ShatterType::DYNAMIC => self.generate_rabbit_hole(),
@@ -226,8 +229,7 @@ impl Shatter {
                 #body
             }
         };
-        let parsed = syn::parse2::<Block>(tokens).unwrap();
-        parsed.stmts
+        syn::parse2::<Block>(tokens).unwrap()
     }
 
     fn inject_branch(&self) -> Vec<Stmt> {
@@ -237,7 +239,7 @@ impl Shatter {
             {
                 #setup
                 if #check {
-                    #(#body)*
+                    #body
                 }
             }
         };
@@ -245,9 +247,7 @@ impl Shatter {
         parsed.stmts
     }
 
-    fn convert_assert(&self, assert: Option<ExprMacro>, is_cmp: bool, is_eq: bool) -> Vec<Stmt> {
-        let m = assert.unwrap();
-
+    fn convert_assert(&self, assert: ExprMacro, is_cmp: bool, is_eq: bool) -> Vec<Stmt> {
         let condition: TokenStream;
 
         /*
@@ -258,7 +258,7 @@ impl Shatter {
          */
         if is_cmp {
             //This is an *_eq or *_ne assert
-            let parsed = m.mac.parse_body::<AssertCmpArgs>().unwrap();
+            let parsed = assert.mac.parse_body::<AssertCmpArgs>().unwrap();
             let parsed_first = parsed.first_condition;
             let parsed_second = parsed.second_condition;
             if is_eq {
@@ -272,25 +272,32 @@ impl Shatter {
             }
         } else {
             //This is a simple assert without any equality checks
-            let parsed = m.mac.parse_body::<AssertArgs>().unwrap();
+            let parsed = assert.mac.parse_body::<AssertArgs>().unwrap();
             let parsed_cond = parsed.condition;
             condition = quote! {
                 !(#parsed_cond)
             };
         }
 
+        let parsed_condition: Box<Expr> = Box::new(syn::parse2::<Expr>(condition).unwrap());
+
         let body = self.generate_shatter_statement(ShatterType::DYNAMIC);
 
-        let replacement = quote! {
-            {
-                if #condition {
-                    #(#body)*
-                }
-            }
+        //This is done to enforce type safety rather than relying on quote! type detection to be
+        //parsed correctly
+        let data = Block {
+            brace_token: Brace {
+                span: assert.span(),
+            },
+            stmts: vec![Stmt::Expr(Expr::If(ExprIf {
+                attrs: Vec::new(),
+                if_token: Token![if](assert.span()),
+                cond: parsed_condition,
+                then_branch: body,
+                else_branch: None,
+            }))],
         };
-
-        let parsed_replacement = syn::parse2::<Block>(replacement).unwrap();
-        parsed_replacement.stmts
+        data.stmts
     }
 }
 
@@ -394,7 +401,7 @@ impl VisitMut for Shatter {
             if is_assert {
                 //Parse and convert the assert
                 shattered_stmts.extend_from_slice(&self.convert_assert(
-                    assert_macro,
+                    assert_macro.unwrap(),
                     is_assert_cmp,
                     is_assert_eq,
                 ));
