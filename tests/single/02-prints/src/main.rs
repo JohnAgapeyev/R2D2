@@ -18,4 +18,7 @@ fn main() {
     println!("Byte string literal {:?}", b"Fancy byte string literal");
     println!("Raw string literal {}", r#"Lame raw string literal"#);
     println!("Complicated string literal {:?}", br#"Lame raw string literal"#);
+
+    let y: &str = "fizzbuzz";
+    println!("{}", y);
 }

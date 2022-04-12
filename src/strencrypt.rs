@@ -12,7 +12,7 @@ use crate as r2d2;
 
 struct MemEncCtx {
     ctx: MemoryEncryptionCtx<XChaCha20Poly1305>,
-    is_let_assignment: bool,
+    needs_owned_str: bool,
 }
 
 impl ToTokens for MemEncCtx {
@@ -22,7 +22,7 @@ impl ToTokens for MemEncCtx {
         let ciphertext = &self.ctx.ciphertext;
         let output: proc_macro2::TokenStream;
 
-        if self.is_let_assignment {
+        if self.needs_owned_str {
             /*
              * let x = "foobar";
              * println!("{}", x);
@@ -146,7 +146,7 @@ impl VisitMut for StrReplace {
             if let Lit::Str(s) = &expr.lit {
                 let mem_ctx = MemEncCtx {
                     ctx: encrypt_memory::<XChaCha20Poly1305>(s.value().as_bytes()),
-                    is_let_assignment: false,
+                    needs_owned_str: false,
                 };
                 let output = quote! {
                     {
@@ -159,7 +159,7 @@ impl VisitMut for StrReplace {
             } else if let Lit::ByteStr(s) = &expr.lit {
                 let mem_ctx = MemEncCtx {
                     ctx: encrypt_memory::<XChaCha20Poly1305>(&s.value()),
-                    is_let_assignment: false,
+                    needs_owned_str: false,
                 };
                 let output = quote! {
                     {
@@ -191,9 +191,21 @@ impl VisitMut for StrReplace {
         if let Some(init) = &node.init {
             if let Expr::Lit(expr) = &*init.1 {
                 if let Lit::Str(s) = &expr.lit {
+                    /*
+                     * Skip let assignments with an explicit reference type
+                     * This is fine for string literals due to static lifetime
+                     * Decryption doesn't have a static lifetime, so an explicit reference storage
+                     * will run into object lifetime issues
+                     */
+                    if let Pat::Type(ty) = &node.pat {
+                        if let Type::Reference(_) = *ty.ty {
+                            return;
+                        }
+                    }
+
                     let mem_ctx = MemEncCtx {
                         ctx: encrypt_memory::<XChaCha20Poly1305>(s.value().as_bytes()),
-                        is_let_assignment: true,
+                        needs_owned_str: true,
                     };
                     let output = quote! {
                         {
