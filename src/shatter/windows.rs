@@ -6,6 +6,7 @@ use rand;
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::rngs::OsRng;
+use windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent;
 
 use crate::shatter::ShatterCondition;
 
@@ -15,7 +16,11 @@ use crate as r2d2;
 
 pub fn generate_anti_debug_check() -> ShatterCondition {
     let setup = quote! {};
-    let check = quote! { false };
+    let check = quote! {
+        unsafe {
+            r2d2::windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent().as_bool()
+        }
+    };
     ShatterCondition { setup, check }
 }
 

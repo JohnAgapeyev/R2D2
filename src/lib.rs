@@ -16,6 +16,9 @@ pub use rand::prelude::*;
 pub use rand::rngs::OsRng;
 pub use subtle;
 
+#[cfg(target_os = "windows")]
+pub use windows;
+
 //Grab our submodules
 pub mod crypto;
 mod shuffle;
