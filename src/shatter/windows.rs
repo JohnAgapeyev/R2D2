@@ -59,23 +59,28 @@ unsafe fn test_pe_inspection() {
     let pe: PE = PE::parse_with_opts(header_slice, &opts).unwrap();
 
     for section in pe.sections {
-        //Need to manually strip the trailing zero bytes for shortened section names
-        let mut len = 0usize;
-        for (i, b) in section.name.iter().enumerate().rev() {
-            if b != &0u8 {
-                len = i;
-                break;
-            }
-        }
-        //Avoid dying on stripped PE section names (I honestly wonder if this is valid)
-        if len == 0 {
-            continue;
+        let name = section.name().unwrap_or_default();
+        if name.is_empty() {
+            continue
         }
 
-        //+1 due to len storing the last zero indexed valid character
-        //"foo" would have a len of 2
-        let s = std::string::String::from_utf8(section.name[..len+1].to_vec()).unwrap();
-        eprintln!("Proper section name {s:#?}");
+        if (section.characteristics & pe::section_table::IMAGE_SCN_CNT_CODE) != 0 {
+            eprintln!("Section {name} has executable code in it");
+            eprintln!("Section details {section:#x?}");
+
+            let base = pe.image_base;
+            let size = section.virtual_size;
+            let addr = (base as *const u8).add(section.virtual_address as usize);
+            //let addr = base as *const u8 + section.virtual_address as *const u8;
+
+            eprintln!("What do we have 0x{base:x}, 0x{size:x}, {addr:#?}");
+
+
+            let mut test_contents = [0u8; 0x100];
+            std::ptr::copy_nonoverlapping(addr, test_contents.as_mut_ptr(), 0x100);
+
+            eprintln!("Our starting text contents {test_contents:x?}");
+        }
     }
 
     //eprintln!("Did we get it {pe:#?}");
