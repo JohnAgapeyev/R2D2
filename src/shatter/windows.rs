@@ -1,12 +1,26 @@
 #![allow(unused_imports)]
 use goblin::{error, pe};
+use goblin::pe::header::*;
+use goblin::pe::optional_header::*;
+use goblin::pe::PE;
+use goblin::pe::options::ParseOptions;
 use proc_macro2::TokenStream;
 use quote::*;
 use rand;
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::rngs::OsRng;
+use scroll::{Pread, Pwrite};
+use windows::core::*;
 use windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent;
+use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::Foundation::GetLastError;
+use windows::Win32::Storage::FileSystem::GetFileSizeEx;
+use std::ptr;
+use std::mem::{self, size_of};
+use std::env;
+use std::fs;
 
 use crate::shatter::ShatterCondition;
 
@@ -24,7 +38,33 @@ pub fn generate_anti_debug_check() -> ShatterCondition {
     ShatterCondition { setup, check }
 }
 
+unsafe fn test_pe_inspection() {
+    let null_pcstr = PCSTR(ptr::null());
+    let real_handle = GetModuleHandleA(null_pcstr).0;
+    let handle = real_handle as *const u8;
+    assert!(!handle.is_null());
+
+    eprintln!("Test {handle:#?}");
+
+    let path = env::current_exe().unwrap();
+    let total_size = fs::metadata(path).unwrap().len();
+
+    eprintln!("Our file size is {total_size}");
+
+    let header_slice = &*ptr::slice_from_raw_parts(handle, total_size as usize);
+    //Need to explicitly disable rva resolution since filenames don't exist in memory
+    let opts = ParseOptions {
+        resolve_rva: false,
+    };
+    let pe: PE = PE::parse_with_opts(header_slice, &opts).unwrap();
+
+    eprintln!("Did we get it {pe:#?}");
+}
+
 pub fn generate_integrity_check() -> ShatterCondition {
+    unsafe {
+        test_pe_inspection();
+    }
     let setup = quote! {};
     let check = quote! { false };
     ShatterCondition { setup, check }
