@@ -58,7 +58,27 @@ unsafe fn test_pe_inspection() {
     };
     let pe: PE = PE::parse_with_opts(header_slice, &opts).unwrap();
 
-    eprintln!("Did we get it {pe:#?}");
+    for section in pe.sections {
+        //Need to manually strip the trailing zero bytes for shortened section names
+        let mut len = 0usize;
+        for (i, b) in section.name.iter().enumerate().rev() {
+            if b != &0u8 {
+                len = i;
+                break;
+            }
+        }
+        //Avoid dying on stripped PE section names (I honestly wonder if this is valid)
+        if len == 0 {
+            continue;
+        }
+
+        //+1 due to len storing the last zero indexed valid character
+        //"foo" would have a len of 2
+        let s = std::string::String::from_utf8(section.name[..len+1].to_vec()).unwrap();
+        eprintln!("Proper section name {s:#?}");
+    }
+
+    //eprintln!("Did we get it {pe:#?}");
 }
 
 pub fn generate_integrity_check() -> ShatterCondition {
