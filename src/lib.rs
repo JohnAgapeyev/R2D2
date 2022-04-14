@@ -1,13 +1,11 @@
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
-use cargo_metadata::{Metadata, MetadataCommand};
+use cargo_metadata::{Message, Metadata, MetadataCommand};
 use std::env;
-use std::fs;
-use std::fs::DirBuilder;
-use std::fs::OpenOptions;
-use std::io;
-use std::io::ErrorKind;
-use std::process::{Command, Output, Stdio};
+use std::fs::{self, DirBuilder, OpenOptions};
+use std::io::{self, BufReader, ErrorKind};
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
+use std::os::windows::process::ExitStatusExt;
 use walkdir::WalkDir;
 
 //Public modules referenced in generated code
@@ -181,9 +179,6 @@ pub fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf) -> io::Result<()> {
 pub struct SourceInformation {
     pub workspace_root: Utf8PathBuf,
     pub target_dir: Utf8PathBuf,
-    //I know this isn't proper, but the logic is nontrivial and I want this to work before it's
-    //clean
-    pub metadata: Metadata,
 }
 
 pub fn get_src_dir() -> SourceInformation {
@@ -191,7 +186,6 @@ pub fn get_src_dir() -> SourceInformation {
     SourceInformation {
         workspace_root: metadata.workspace_root.clone(),
         target_dir: metadata.target_directory.clone(),
-        metadata,
     }
 }
 
@@ -231,7 +225,7 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
         shatter_states = obfuscate_dir(&dest)?;
     }
 
-    let mut output: Output;
+    let mut command: Child;
 
     //TODO: I really hate this duplication
     /*
@@ -245,66 +239,69 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
      * But that is a lot of work, and it's been a long day, that's for later
      */
     if let Some(cargo_args) = &config.cargo_args {
-        if config.stream_output {
-            output = Command::new("cargo")
-                .arg("build")
-                .arg("--target-dir")
-                .arg(&src.target_dir)
-                .args(cargo_args)
-                .current_dir(&dest)
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .output().unwrap();
-        } else {
-            output = Command::new("cargo")
-                .arg("build")
-                .arg("--target-dir")
-                .arg(&src.target_dir)
-                .args(cargo_args)
-                .current_dir(&dest)
-                .output().unwrap();
-        }
+        command = Command::new("cargo")
+            .arg("build")
+            .arg("--message-format=json-render-diagnostics")
+            .arg("--target-dir")
+            .arg(&src.target_dir)
+            .args(cargo_args)
+            .current_dir(&dest)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn().unwrap();
     } else {
-        if config.stream_output {
-            output = Command::new("cargo")
-                .arg("build")
-                .arg("--target-dir")
-                .arg(&src.target_dir)
-                .current_dir(&dest)
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .output().unwrap();
-        } else {
-            output = Command::new("cargo")
-                .arg("build")
-                .arg("--target-dir")
-                .arg(&src.target_dir)
-                .current_dir(&dest)
-                .output().unwrap();
+        command = Command::new("cargo")
+            .arg("build")
+            .arg("--message-format=json-render-diagnostics")
+            .arg("--target-dir")
+            .arg(&src.target_dir)
+            .current_dir(&dest)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn().unwrap();
+    }
+
+    let mut executables: Vec<Utf8PathBuf> = Vec::new();
+
+    let output_reader = BufReader::new(command.stdout.take().unwrap());
+    for message in Message::parse_stream(output_reader) {
+        match message.unwrap() {
+            Message::CompilerMessage(msg) => {
+                println!("{msg}");
+            },
+            Message::CompilerArtifact(artifact) => {
+                if let Some(binary_path) = artifact.executable {
+                    executables.push(binary_path);
+                }
+            },
+            _ => ()
         }
     }
+
+    let err_reader = BufReader::new(command.stderr.take().unwrap());
+    for message in Message::parse_stream(err_reader) {
+        match message.unwrap() {
+            Message::CompilerMessage(msg) => {
+                eprintln!("{msg}");
+            },
+            _ => ()
+        }
+    }
+
+    let status = command.wait().expect("Couldn't get cargo's exit status");
 
 
     //Post compilation
-    //for shatter in shatter_states {
-    //    shatter.post_compilation();
-    //}
-    let root_id = src.metadata.resolve.unwrap().root.unwrap();
-
-    for pkg in src.metadata.packages {
-        if pkg.id == root_id {
-            eprintln!("I SURE FOUND IT {}", pkg.name);
-            for target in pkg.targets {
-                if target.kind.contains(&String::from("bin")) {
-                    eprintln!("E-GADS a binary called {}", target.name);
-                    eprintln!("I expect my binary at {}\\{}", src.target_dir, target.name);
-                }
-            }
+    for binary in executables {
+        for shatter in &shatter_states {
+            //shatter.post_compilation();
         }
     }
 
-    if let Some(cargo_args) = &config.cargo_args {
-        if config.need_run {
+    let output: Output;
+
+    if config.need_run {
+        if let Some(cargo_args) = &config.cargo_args {
             //TODO: Need to double check that the run command doesn't also rebuild after
             //post-compilation
             output = Command::new("cargo")
@@ -314,20 +311,28 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
                 .args(cargo_args)
                 .current_dir(&dest)
                 .output().unwrap();
+            } else {
+                //TODO: Need to double check that the run command doesn't also rebuild after
+                //post-compilation
+                output = Command::new("cargo")
+                    .arg("run")
+                    .arg("--target-dir")
+                    .arg(&src.target_dir)
+                    .current_dir(&dest)
+                    .output().unwrap();
         }
     } else {
-        if config.need_run {
-            //TODO: Need to double check that the run command doesn't also rebuild after
-            //post-compilation
-            output = Command::new("cargo")
-                .arg("run")
-                .arg("--target-dir")
-                .arg(&src.target_dir)
-                .current_dir(&dest)
-                .output().unwrap();
-        }
+        //TODO: Need to figure out what kind of info we want to save/expose for testing/error
+        //handling
+        output = Output {
+            status: ExitStatus::from_raw(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        };
     }
 
+
+    //Ok(test)
     Ok(output)
 }
 

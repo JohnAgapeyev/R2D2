@@ -1,9 +1,9 @@
 #![allow(unused_imports)]
-use goblin::{error, pe};
 use goblin::pe::header::*;
 use goblin::pe::optional_header::*;
-use goblin::pe::PE;
 use goblin::pe::options::ParseOptions;
+use goblin::pe::PE;
+use goblin::{error, pe};
 use proc_macro2::TokenStream;
 use quote::*;
 use rand;
@@ -11,19 +11,19 @@ use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::rngs::OsRng;
 use scroll::{Pread, Pwrite};
-use windows::core::*;
-use windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent;
-use windows::Win32::System::LibraryLoader::GetModuleHandleA;
-use windows::Win32::Foundation::HANDLE;
-use windows::Win32::Foundation::GetLastError;
-use windows::Win32::Storage::FileSystem::GetFileSizeEx;
-use std::ptr;
-use std::mem::{self, size_of};
 use std::env;
 use std::fs;
+use std::mem::{self, size_of};
+use std::ptr;
+use windows::core::*;
+use windows::Win32::Foundation::GetLastError;
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::Storage::FileSystem::GetFileSizeEx;
+use windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent;
+use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 
-use crate::shatter::{self, IntegrityCheckType, ShatterCondition};
 use crate::crypto::{self, hash};
+use crate::shatter::{self, IntegrityCheckType, ShatterCondition};
 
 //Workaround to self obfuscate (since we can't add ourselves as a dependency)
 #[allow(unused_imports)]
@@ -54,15 +54,13 @@ unsafe fn test_pe_inspection() {
 
     let header_slice = &*ptr::slice_from_raw_parts(handle, total_size as usize);
     //Need to explicitly disable rva resolution since filenames don't exist in memory
-    let opts = ParseOptions {
-        resolve_rva: false,
-    };
+    let opts = ParseOptions { resolve_rva: false };
     let pe: PE = PE::parse_with_opts(header_slice, &opts).unwrap();
 
     for section in pe.sections {
         let name = section.name().unwrap_or_default();
         if name.is_empty() {
-            continue
+            continue;
         }
 
         if (section.characteristics & pe::section_table::IMAGE_SCN_CNT_CODE) != 0 {
@@ -159,5 +157,8 @@ pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec
         eprintln!("");
     };
     let check = quote! { false };
-    (ShatterCondition { setup, check }, (IntegrityCheckType::ALL, Vec::from(hash)))
+    (
+        ShatterCondition { setup, check },
+        (IntegrityCheckType::ALL, Vec::from(hash)),
+    )
 }
