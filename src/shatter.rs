@@ -9,7 +9,9 @@ use syn::spanned::Spanned;
 use syn::token::Brace;
 use syn::visit_mut::*;
 use syn::*;
+use std::collections::HashMap;
 use camino::Utf8PathBuf;
+use std::cmp::{Eq, PartialEq};
 
 use crate::parse::*;
 
@@ -65,8 +67,16 @@ enum ConditionType {
     KILLDATE,
 }
 
+#[derive(Hash, PartialEq, Eq)]
+pub enum IntegrityCheckType {
+    //Hash every byte
+    ALL,
+    //TODO: Define and implement other variations like every Nth byte
+}
+
 struct Shatter {
     inside_unsafe_block: bool,
+    integrity_checks: HashMap<IntegrityCheckType, Vec<u8>>
 }
 
 //TODO: Is it better to type check this and pay the double conversion cost?
@@ -88,7 +98,7 @@ fn generate_unique_ident() -> proc_macro2::Ident {
 }
 
 impl Shatter {
-    fn generate_false_condition(&self) -> ShatterCondition {
+    fn generate_false_condition(&mut self) -> ShatterCondition {
         let cond_ident = generate_unique_ident();
         let result_ident = generate_unique_ident();
         let setup = quote! {
@@ -102,16 +112,18 @@ impl Shatter {
     }
 
     //TODO: Implement
-    fn generate_anti_debug_check(&self) -> ShatterCondition {
+    fn generate_anti_debug_check(&mut self) -> ShatterCondition {
         os::generate_anti_debug_check()
     }
 
     //TODO: Implement
-    fn generate_integrity_check(&self) -> ShatterCondition {
-        os::generate_integrity_check()
+    fn generate_integrity_check(&mut self) -> ShatterCondition {
+        let (cond, (hash_type, hash)) = os::generate_integrity_check();
+        self.integrity_checks.insert(hash_type, hash);
+        cond
     }
 
-    fn generate_kill_date_check(&self) -> ShatterCondition {
+    fn generate_kill_date_check(&mut self) -> ShatterCondition {
         let epoch_now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let target_date_seconds = option_env!("KILLDATE");
         let target_duration: Duration;
@@ -144,7 +156,7 @@ impl Shatter {
         ShatterCondition { setup, check }
     }
 
-    fn generate_branch_condition(&self) -> ShatterCondition {
+    fn generate_branch_condition(&mut self) -> ShatterCondition {
         let conditions: Vec<ConditionType> = vec![
             ConditionType::FALSE,
             ConditionType::DEBUG,
@@ -161,7 +173,7 @@ impl Shatter {
         }
     }
 
-    fn generate_garbage_asm(&self) -> Block {
+    fn generate_garbage_asm(&mut self) -> Block {
         let mut garbage: Vec<u8> = arch::generate_partial_instruction();
 
         if garbage.is_empty() {
@@ -202,12 +214,12 @@ impl Shatter {
         syn::parse2::<Block>(body_content).unwrap()
     }
 
-    fn generate_rabbit_hole(&self) -> Block {
+    fn generate_rabbit_hole(&mut self) -> Block {
         //TODO: Have non-asm rabbit holes, and randomly choose between asm and generic here
         arch::generate_rabbit_hole()
     }
 
-    fn generate_shatter_statement(&self, shatter_type: ShatterType) -> Block {
+    fn generate_shatter_statement(&mut self, shatter_type: ShatterType) -> Block {
         let body_content = match shatter_type {
             ShatterType::STATIC => self.generate_garbage_asm(),
             ShatterType::DYNAMIC => self.generate_rabbit_hole(),
@@ -233,7 +245,7 @@ impl Shatter {
         syn::parse2::<Block>(tokens).unwrap()
     }
 
-    fn inject_branch(&self) -> Vec<Stmt> {
+    fn inject_branch(&mut self) -> Vec<Stmt> {
         let ShatterCondition { setup, check } = self.generate_branch_condition();
         let body = self.generate_shatter_statement(ShatterType::STATIC);
         let tokens = quote! {
@@ -248,7 +260,7 @@ impl Shatter {
         parsed.stmts
     }
 
-    fn convert_assert(&self, assert: ExprMacro, is_cmp: bool, is_eq: bool) -> Vec<Stmt> {
+    fn convert_assert(&mut self, assert: ExprMacro, is_cmp: bool, is_eq: bool) -> Vec<Stmt> {
         let condition: TokenStream;
 
         /*
@@ -430,6 +442,7 @@ impl VisitMut for Shatter {
 pub fn shatter(input: &mut File) {
     let mut state = Shatter {
         inside_unsafe_block: false,
+        integrity_checks: HashMap::new(),
     };
     Shatter::visit_file_mut(&mut state, input);
 }

@@ -22,7 +22,7 @@ use std::mem::{self, size_of};
 use std::env;
 use std::fs;
 
-use crate::shatter::ShatterCondition;
+use crate::shatter::{self, IntegrityCheckType, ShatterCondition};
 use crate::crypto::{self, hash};
 
 //Workaround to self obfuscate (since we can't add ourselves as a dependency)
@@ -90,7 +90,7 @@ pub fn integrity_check_post_compilation() {
     unimplemented!();
 }
 
-pub fn generate_integrity_check() -> ShatterCondition {
+pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec<u8>)) {
     //unsafe {
     //    test_pe_inspection();
     //}
@@ -158,5 +158,5 @@ pub fn generate_integrity_check() -> ShatterCondition {
         eprintln!("");
     };
     let check = quote! { false };
-    ShatterCondition { setup, check }
+    (ShatterCondition { setup, check }, (IntegrityCheckType::ALL, Vec::from(hash)))
 }
