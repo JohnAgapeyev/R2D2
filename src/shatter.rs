@@ -9,6 +9,7 @@ use syn::spanned::Spanned;
 use syn::token::Brace;
 use syn::visit_mut::*;
 use syn::*;
+use camino::Utf8PathBuf;
 
 use crate::parse::*;
 
@@ -432,3 +433,8 @@ pub fn shatter(input: &mut File) {
     };
     Shatter::visit_file_mut(&mut state, input);
 }
+
+pub fn shatter_post_compilation(_path: &Utf8PathBuf) {
+    os::integrity_check_post_compilation();
+}
+

@@ -7,6 +7,7 @@ use std::fs::DirBuilder;
 use std::fs::OpenOptions;
 use std::io;
 use std::io::ErrorKind;
+use std::process::{Command, Output, Stdio};
 use walkdir::WalkDir;
 
 //Public modules referenced in generated code
@@ -185,3 +186,112 @@ pub fn get_src_dir() -> SourceInformation {
         target_dir: metadata.target_directory,
     }
 }
+
+pub struct R2D2Config<'a> {
+    pub dest_name: Option<&'a str>,
+    pub cargo_args: Option<Vec<&'a str>>,
+    pub need_run: bool,
+    pub need_obfuscate: bool,
+    pub obfuscate_dir: Option<&'a str>,
+    pub stream_output: bool,
+}
+
+pub fn build(config: &R2D2Config) -> io::Result<Output> {
+    let src = get_src_dir();
+    let mut dest = generate_temp_folder_name(config.dest_name);
+
+    if let Ok(_) = std::fs::metadata(&dest) {
+        //Clean up the folder if it already exists
+        let _ = fs::remove_dir_all(&dest);
+    }
+
+    DirBuilder::new().recursive(true).create(&dest)?;
+
+    copy_dir(&src.workspace_root, &dest)?;
+
+    if let Some(partial) = config.obfuscate_dir {
+        let mut true_dest_str = String::from(dest.as_str());
+        true_dest_str.push('/');
+        true_dest_str.push_str(partial);
+
+        dest = Utf8PathBuf::from(true_dest_str);
+    }
+
+    if config.need_obfuscate {
+        obfuscate_dir(&dest)?;
+    }
+
+    let mut output: Output;
+
+    //TODO: I really hate this duplication
+    if let Some(cargo_args) = &config.cargo_args {
+        if config.stream_output {
+            output = Command::new("cargo")
+                .arg("build")
+                .arg("--target-dir")
+                .arg(&src.target_dir)
+                .args(cargo_args)
+                .current_dir(&dest)
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .output().unwrap();
+        } else {
+            output = Command::new("cargo")
+                .arg("build")
+                .arg("--target-dir")
+                .arg(&src.target_dir)
+                .args(cargo_args)
+                .current_dir(&dest)
+                .output().unwrap();
+        }
+    } else {
+        if config.stream_output {
+            output = Command::new("cargo")
+                .arg("build")
+                .arg("--target-dir")
+                .arg(&src.target_dir)
+                .current_dir(&dest)
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .output().unwrap();
+        } else {
+            output = Command::new("cargo")
+                .arg("build")
+                .arg("--target-dir")
+                .arg(&src.target_dir)
+                .current_dir(&dest)
+                .output().unwrap();
+        }
+    }
+
+
+    //Post compilation
+
+    if let Some(cargo_args) = &config.cargo_args {
+        if config.need_run {
+            //TODO: Need to double check that the run command doesn't also rebuild after
+            //post-compilation
+            output = Command::new("cargo")
+                .arg("run")
+                .arg("--target-dir")
+                .arg(&src.target_dir)
+                .args(cargo_args)
+                .current_dir(&dest)
+                .output().unwrap();
+        }
+    } else {
+        if config.need_run {
+            //TODO: Need to double check that the run command doesn't also rebuild after
+            //post-compilation
+            output = Command::new("cargo")
+                .arg("run")
+                .arg("--target-dir")
+                .arg(&src.target_dir)
+                .current_dir(&dest)
+                .output().unwrap();
+        }
+    }
+
+    Ok(output)
+}
+

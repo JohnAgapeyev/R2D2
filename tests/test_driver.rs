@@ -59,28 +59,34 @@ fn lock_filesystem() -> MutexGuard<'static, ()> {
 
 fn compile_test(path: &str) -> Output {
     let _lock = lock_filesystem();
-    let (src, dest) = setup_test_crate(path).unwrap();
+    //let (src, dest) = setup_test_crate(path).unwrap();
 
-    Command::new("cargo")
-        .arg("build")
-        .arg("--target-dir")
-        .arg(&src)
-        .current_dir(&dest)
-        .output()
-        .unwrap()
+    let config = R2D2Config {
+        dest_name: Some(TEST_DIRECTORY),
+        cargo_args: None,
+        need_run: false,
+        need_obfuscate: true,
+        obfuscate_dir: Some(path),
+        stream_output: false,
+    };
+
+    build(&config).unwrap()
 }
 
 fn functional_test(path: &str) -> Output {
     let _lock = lock_filesystem();
-    let (src, dest) = setup_test_crate(path).unwrap();
+    //let (src, dest) = setup_test_crate(path).unwrap();
 
-    Command::new("cargo")
-        .arg("run")
-        .arg("--target-dir")
-        .arg(&src)
-        .current_dir(&dest)
-        .output()
-        .unwrap()
+    let config = R2D2Config {
+        dest_name: Some(TEST_DIRECTORY),
+        cargo_args: None,
+        need_run: true,
+        need_obfuscate: true,
+        obfuscate_dir: Some(path),
+        stream_output: false,
+    };
+
+    build(&config).unwrap()
 }
 
 mod single {

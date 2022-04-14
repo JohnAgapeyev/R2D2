@@ -86,6 +86,10 @@ unsafe fn test_pe_inspection() {
     //eprintln!("Did we get it {pe:#?}");
 }
 
+pub fn integrity_check_post_compilation() {
+    unimplemented!();
+}
+
 pub fn generate_integrity_check() -> ShatterCondition {
     //unsafe {
     //    test_pe_inspection();
