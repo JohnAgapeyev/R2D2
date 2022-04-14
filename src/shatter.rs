@@ -313,8 +313,8 @@ impl Shatter {
         data.stmts
     }
 
-    pub fn post_compilation(&mut self, _path: &Utf8PathBuf) {
-        os::integrity_check_post_compilation();
+    pub fn post_compilation(&self, path: &Utf8PathBuf) {
+        os::integrity_check_post_compilation(path, &self.integrity_checks);
     }
 }
 

@@ -294,7 +294,7 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
     //Post compilation
     for binary in executables {
         for shatter in &shatter_states {
-            //shatter.post_compilation();
+            shatter.post_compilation(&binary);
         }
     }
 

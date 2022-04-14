@@ -21,6 +21,8 @@ use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::GetFileSizeEx;
 use windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
+use camino::Utf8PathBuf;
+use std::collections::HashMap;
 
 use crate::crypto::{self, hash};
 use crate::shatter::{self, IntegrityCheckType, ShatterCondition};
@@ -84,8 +86,44 @@ unsafe fn test_pe_inspection() {
     //eprintln!("Did we get it {pe:#?}");
 }
 
-pub fn integrity_check_post_compilation() {
-    unimplemented!();
+pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &HashMap<IntegrityCheckType, Vec<u8>>) {
+    let contents = fs::read(path).unwrap();
+
+    eprintln!("What's the data like? {}", contents.len());
+
+    //Need to explicitly disable rva resolution since filenames don't exist in memory
+    //let opts = ParseOptions { resolve_rva: false };
+    let opts = ParseOptions { resolve_rva: true };
+    let pe: PE = PE::parse_with_opts(&contents, &opts).unwrap();
+
+    for section in pe.sections {
+        let name = section.name().unwrap_or_default();
+        if name.is_empty() {
+            continue;
+        }
+
+        if (section.characteristics & pe::section_table::IMAGE_SCN_CNT_CODE) != 0 {
+            eprintln!("Section {name} has executable code in it");
+            eprintln!("Section details {section:#x?}");
+
+            let size = section.size_of_raw_data as usize;
+            let addr = section.pointer_to_raw_data as usize;
+
+            //eprintln!("What do we have 0x{base:x}, 0x{size:x}, {addr:#?}");
+
+            let text_slice = &contents[addr..addr+size];
+
+            eprintln!("Post Initial data {:x?}", &text_slice[..64]);
+
+            //let text_slice = &*ptr::slice_from_raw_parts(addr, size as usize);
+
+            //let (hash, salt) = crypto::hash::<crypto::Blake2b512>(text_slice, true);
+
+            //eprintln!("Hash {hash:x?}");
+            //eprintln!("Salt {salt:x?}");
+        }
+    }
+    //eprintln!("Did we get it {pe:#?}");
 }
 
 pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec<u8>)) {
@@ -144,6 +182,8 @@ pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec
                     eprintln!("What do we have 0x{base:x}, 0x{size:x}, {addr:#?}");
 
                     let text_slice = &*::std::ptr::slice_from_raw_parts(addr, size as usize);
+
+                    eprintln!("Execute Initial data {:x?}", &text_slice[..64]);
 
                     calculated_hash = r2d2::crypto::hash::<r2d2::crypto::Blake2b512>(text_slice, Some(&salt));
                     break;
