@@ -86,15 +86,20 @@ unsafe fn test_pe_inspection() {
     //eprintln!("Did we get it {pe:#?}");
 }
 
-pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &HashMap<IntegrityCheckType, Vec<u8>>) {
+pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &HashMap<IntegrityCheckType, (Vec<u8>, Vec<u8>)>) {
     let contents = fs::read(path).unwrap();
 
     eprintln!("What's the data like? {}", contents.len());
 
     //Need to explicitly disable rva resolution since filenames don't exist in memory
     //let opts = ParseOptions { resolve_rva: false };
+    //TODO: Make a generic API that toggles resolve_rva based on memory vs disk parsing
+    //Grab the slice out of it easily without all this duplication
     let opts = ParseOptions { resolve_rva: true };
     let pe: PE = PE::parse_with_opts(&contents, &opts).unwrap();
+
+    let dummy_init: Vec<u8> = Vec::new();
+    let mut text_slice: &[u8] = &dummy_init;
 
     for section in pe.sections {
         let name = section.name().unwrap_or_default();
@@ -109,24 +114,26 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &HashMap<Int
             let size = section.size_of_raw_data as usize;
             let addr = section.pointer_to_raw_data as usize;
 
-            //eprintln!("What do we have 0x{base:x}, 0x{size:x}, {addr:#?}");
-
-            let text_slice = &contents[addr..addr+size];
-
-            eprintln!("Post Initial data {:x?}", &text_slice[..64]);
-
-            //let text_slice = &*ptr::slice_from_raw_parts(addr, size as usize);
-
-            //let (hash, salt) = crypto::hash::<crypto::Blake2b512>(text_slice, true);
-
-            //eprintln!("Hash {hash:x?}");
-            //eprintln!("Salt {salt:x?}");
+            text_slice = &contents[addr..addr+size];
+            break;
         }
     }
-    //eprintln!("Did we get it {pe:#?}");
+
+    for (check_type, (hash, salt)) in checks {
+        match check_type {
+            IntegrityCheckType::ALL => {
+                let real_hash = crypto::hash::<crypto::Blake2b512>(text_slice, Some(&salt));
+
+                eprintln!("Hash {hash:x?}");
+                eprintln!("REAL {real_hash:x?}");
+                eprintln!("Salt {salt:x?}");
+            }
+            //Currently we don't have any other kinds of hashing checks
+        }
+    }
 }
 
-pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec<u8>)) {
+pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec<u8>, Vec<u8>)) {
     //unsafe {
     //    test_pe_inspection();
     //}
@@ -183,8 +190,6 @@ pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec
 
                     let text_slice = &*::std::ptr::slice_from_raw_parts(addr, size as usize);
 
-                    eprintln!("Execute Initial data {:x?}", &text_slice[..64]);
-
                     calculated_hash = r2d2::crypto::hash::<r2d2::crypto::Blake2b512>(text_slice, Some(&salt));
                     break;
                 }
@@ -199,6 +204,6 @@ pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec
     let check = quote! { false };
     (
         ShatterCondition { setup, check },
-        (IntegrityCheckType::ALL, Vec::from(hash)),
+        (IntegrityCheckType::ALL, Vec::from(hash), Vec::from(salt)),
     )
 }

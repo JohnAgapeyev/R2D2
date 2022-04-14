@@ -76,7 +76,8 @@ pub enum IntegrityCheckType {
 
 pub struct Shatter {
     inside_unsafe_block: bool,
-    integrity_checks: HashMap<IntegrityCheckType, Vec<u8>>
+    //TODO: This is wrong, it is overwriting itself, probably needs to be a Vec of structs instead
+    integrity_checks: HashMap<IntegrityCheckType, (Vec<u8>, Vec<u8>)>
 }
 
 //TODO: Is it better to type check this and pay the double conversion cost?
@@ -118,8 +119,8 @@ impl Shatter {
 
     //TODO: Implement
     fn generate_integrity_check(&mut self) -> ShatterCondition {
-        let (cond, (hash_type, hash)) = os::generate_integrity_check();
-        self.integrity_checks.insert(hash_type, hash);
+        let (cond, (hash_type, hash, salt)) = os::generate_integrity_check();
+        self.integrity_checks.insert(hash_type, (hash, salt));
         cond
     }
 
@@ -449,6 +450,28 @@ pub fn shatter(input: &mut File) -> Shatter {
         integrity_checks: HashMap::new(),
     };
     Shatter::visit_file_mut(&mut state, input);
+
+    //Now let's inject all the generated integrity check constants at the global scope
+
+    for (check_type, (hash, salt)) in &state.integrity_checks {
+
+        let static_ident = generate_unique_ident();
+
+        //TODO: Fetch this from the generic array and hash digest trait value
+        let hash_size = 64usize;
+
+        let item_static = quote! {
+            #[used]
+            #[link_section = ".data"]
+            static #static_ident: [u8; #hash_size] = [#(#hash),*];
+        };
+
+        let parsed_static = syn::parse2::<ItemStatic>(item_static).unwrap();
+
+        let item = Item::Static(parsed_static);
+        input.items.push(item);
+    }
+
     state
 }
 
