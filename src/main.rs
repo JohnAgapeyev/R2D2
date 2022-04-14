@@ -120,8 +120,8 @@ fn main() -> io::Result<()> {
     //Unwrap can't fail due to previous match unreachable check
     let cargo_subcommand = matches.subcommand_name().unwrap();
 
-    let no_obfuscate = matches.is_present("plain");
-    println!("Are we obfuscating? {}", !&no_obfuscate);
+    let need_obfuscate = !matches.is_present("plain");
+    println!("Are we obfuscating? {}", &need_obfuscate);
 
     let src = get_src_dir();
     let dest = generate_temp_folder_name(None);
@@ -135,7 +135,7 @@ fn main() -> io::Result<()> {
 
     copy_dir(&src.workspace_root, &dest)?;
 
-    if !no_obfuscate {
+    if need_obfuscate {
         obfuscate_dir(&dest)?;
     }
 

@@ -1,7 +1,9 @@
+use digest::Digest;
 use generic_array;
 use generic_array::typenum::U0;
 use generic_array::typenum::U24;
 use generic_array::typenum::U32;
+use generic_array::typenum::U64;
 use generic_array::GenericArray;
 use rand;
 use rand::rngs::OsRng;
@@ -22,6 +24,7 @@ use zeroize::Zeroize;
 //Public modules used in generated code
 pub use aead::{self, Aead, AeadInPlace, Key, NewAead, Nonce, Tag};
 pub use chacha20poly1305::{self, XChaCha20Poly1305};
+pub use blake2::Blake2b512;
 
 //Workaround to self obfuscate (since we can't add ourselves as a dependency)
 #[allow(unused_imports)]
@@ -81,6 +84,24 @@ where
         .unwrap();
     //println!("We decrypted data: {:#x?}", output);
     output
+}
+
+//Returns the hash and the salt if one was used
+pub fn hash<Hash>(data: &[u8], add_salt: bool) -> (Vec<u8>, Option<Vec<u8>>)
+where
+    Hash: Digest,
+    //We only want 512 bit hashes because why not?
+    Hash::OutputSize: IsEqual<U64, Output = True>,
+{
+    if !add_salt {
+        return (Vec::from(Hash::digest(data).as_slice()), None);
+    }
+    //256 bit salt, probably excessive, but oh well
+    let mut salt = [0u8; 32];
+    OsRng.fill_bytes(&mut salt);
+    let mut h = Hash::new_with_prefix(&salt);
+    h.update(data);
+    (Vec::from(h.finalize().as_slice()), Some(Vec::from(salt)))
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq)]

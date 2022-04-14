@@ -23,6 +23,7 @@ use std::env;
 use std::fs;
 
 use crate::shatter::ShatterCondition;
+use crate::crypto::{self, hash};
 
 //Workaround to self obfuscate (since we can't add ourselves as a dependency)
 #[allow(unused_imports)]
@@ -71,26 +72,71 @@ unsafe fn test_pe_inspection() {
             let base = pe.image_base;
             let size = section.virtual_size;
             let addr = (base as *const u8).add(section.virtual_address as usize);
-            //let addr = base as *const u8 + section.virtual_address as *const u8;
 
             eprintln!("What do we have 0x{base:x}, 0x{size:x}, {addr:#?}");
 
+            let text_slice = &*ptr::slice_from_raw_parts(addr, size as usize);
 
-            let mut test_contents = [0u8; 0x100];
-            std::ptr::copy_nonoverlapping(addr, test_contents.as_mut_ptr(), 0x100);
+            let (hash, salt) = crypto::hash::<crypto::Blake2b512>(text_slice, true);
 
-            eprintln!("Our starting text contents {test_contents:x?}");
+            eprintln!("Hash {hash:x?}");
+            eprintln!("Salt {salt:x?}");
         }
     }
-
     //eprintln!("Did we get it {pe:#?}");
 }
 
 pub fn generate_integrity_check() -> ShatterCondition {
-    unsafe {
-        test_pe_inspection();
-    }
-    let setup = quote! {};
+    //unsafe {
+    //    test_pe_inspection();
+    //}
+    let setup = quote! {
+        unsafe {
+            let null_pcstr = r2d2::windows::core::PCSTR(::std::ptr::null());
+            let real_handle = r2d2::windows::Win32::System::LibraryLoader::GetModuleHandleA(null_pcstr).0;
+            let handle = real_handle as *const u8;
+            assert!(!handle.is_null());
+
+            eprintln!("Test {handle:#?}");
+
+            let path = ::std::env::current_exe().unwrap();
+            let total_size = ::std::fs::metadata(path).unwrap().len();
+
+            eprintln!("Our file size is {total_size}");
+
+            let header_slice = &*::std::ptr::slice_from_raw_parts(handle, total_size as usize);
+            //Need to explicitly disable rva resolution since filenames don't exist in memory
+            let opts = r2d2::goblin::pe::options::ParseOptions {
+                resolve_rva: false,
+            };
+            let pe: r2d2::goblin::pe::PE = r2d2::goblin::pe::PE::parse_with_opts(header_slice, &opts).unwrap();
+
+            for section in pe.sections {
+                let name = section.name().unwrap_or_default();
+                if name.is_empty() {
+                    continue
+                }
+
+                if (section.characteristics & r2d2::goblin::pe::section_table::IMAGE_SCN_CNT_CODE) != 0 {
+                    eprintln!("Section {name} has executable code in it");
+                    eprintln!("Section details {section:#x?}");
+
+                    let base = pe.image_base;
+                    let size = section.virtual_size;
+                    let addr = (base as *const u8).add(section.virtual_address as usize);
+
+                    eprintln!("What do we have 0x{base:x}, 0x{size:x}, {addr:#?}");
+
+                    let text_slice = &*::std::ptr::slice_from_raw_parts(addr, size as usize);
+
+                    let (hash, salt) = r2d2::crypto::hash::<r2d2::crypto::Blake2b512>(text_slice, true);
+
+                    eprintln!("Hash {hash:x?}");
+                    eprintln!("Salt {salt:x?}");
+                }
+            }
+        }
+    };
     let check = quote! { false };
     ShatterCondition { setup, check }
 }

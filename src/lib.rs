@@ -11,10 +11,12 @@ use walkdir::WalkDir;
 
 //Public modules referenced in generated code
 pub use generic_array;
+pub use digest;
 pub use rand;
 pub use rand::prelude::*;
 pub use rand::rngs::OsRng;
 pub use subtle;
+pub use goblin;
 
 #[cfg(target_os = "windows")]
 pub use windows;
