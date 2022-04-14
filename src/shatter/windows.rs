@@ -99,8 +99,9 @@ pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec
     let mut salt = [0u8; 32];
     OsRng.fill_bytes(&mut salt);
 
-    //Stand-in for magic hash value to be replaced post compilation
-    let hash = [0xabu8; 64];
+    //Magic random value to be replaced post compilation with the real hash
+    let mut hash = [0u8; 64];
+    OsRng.fill_bytes(&mut hash);
 
     let setup = quote! {
         let mut calculated_hash: Vec<u8> = Vec::new();

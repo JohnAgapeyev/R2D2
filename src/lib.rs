@@ -1,6 +1,6 @@
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
-use cargo_metadata::MetadataCommand;
+use cargo_metadata::{Metadata, MetadataCommand};
 use std::env;
 use std::fs;
 use std::fs::DirBuilder;
@@ -84,7 +84,7 @@ use crate as r2d2;
  * It's called ptr_metadata, something to keep an eye out for
  */
 
-pub fn obfuscate(input: &String) -> String {
+pub fn obfuscate(input: &String) -> (String, Shatter) {
     let mut input2 = syn::parse_file(&input).unwrap();
 
     //eprintln!("INPUT: {:#?}", input2);
@@ -92,12 +92,12 @@ pub fn obfuscate(input: &String) -> String {
 
     shuffle(&mut input2);
     encrypt_strings(&mut input2);
-    shatter(&mut input2);
+    let shatter = shatter(&mut input2);
 
     //eprintln!("OUTPUT: {:#?}", input2);
     //eprintln!("OUTFORMAT: {}", prettyplease::unparse(&input2));
 
-    prettyplease::unparse(&input2)
+    (prettyplease::unparse(&input2), shatter)
 }
 
 pub fn generate_temp_folder_name(name: Option<&str>) -> Utf8PathBuf {
@@ -106,18 +106,22 @@ pub fn generate_temp_folder_name(name: Option<&str>) -> Utf8PathBuf {
     output
 }
 
-pub fn obfuscate_dir(dir: &Utf8PathBuf) -> io::Result<()> {
+pub fn obfuscate_dir(dir: &Utf8PathBuf) -> io::Result<Vec<Shatter>> {
     //WalkDir filter_entry will prevent the directory from being touched, so have to filter
     //manually
+
+    let mut shatter_states: Vec<Shatter> = Vec::new();
+
     for file in WalkDir::new(dir) {
         let file_path = file?.into_path();
         if file_path.to_str().unwrap_or_default().ends_with(".rs") {
             let contents = fs::read_to_string(&file_path)?;
-            let obfuscated = obfuscate(&contents);
+            let (obfuscated, shatter_state) = obfuscate(&contents);
+            shatter_states.push(shatter_state);
             fs::write(&file_path, &obfuscated)?;
         }
     }
-    Ok(())
+    Ok(shatter_states)
 }
 
 //TODO: Only copy differences with hashes/mtime checks
@@ -177,13 +181,17 @@ pub fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf) -> io::Result<()> {
 pub struct SourceInformation {
     pub workspace_root: Utf8PathBuf,
     pub target_dir: Utf8PathBuf,
+    //I know this isn't proper, but the logic is nontrivial and I want this to work before it's
+    //clean
+    pub metadata: Metadata,
 }
 
 pub fn get_src_dir() -> SourceInformation {
     let metadata = MetadataCommand::new().exec().unwrap();
     SourceInformation {
-        workspace_root: metadata.workspace_root,
-        target_dir: metadata.target_directory,
+        workspace_root: metadata.workspace_root.clone(),
+        target_dir: metadata.target_directory.clone(),
+        metadata,
     }
 }
 
@@ -217,13 +225,25 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
         dest = Utf8PathBuf::from(true_dest_str);
     }
 
+    let mut shatter_states: Vec<Shatter> = Vec::new();
+
     if config.need_obfuscate {
-        obfuscate_dir(&dest)?;
+        shatter_states = obfuscate_dir(&dest)?;
     }
 
     let mut output: Output;
 
     //TODO: I really hate this duplication
+    /*
+     * TODO: Need to grab output as json and parse it with the metadata crate
+     * That will give me artifact messages for every file the compiler generates
+     * This includes paths, release/debug, and whether it's an executable
+     * I can use this to search for my magic strings and replace them post compilation
+     *
+     * The key is Message::parse_stream in the metadata crate
+     * That gives me an enum, and I want a CompilerArtifact enum variant
+     * But that is a lot of work, and it's been a long day, that's for later
+     */
     if let Some(cargo_args) = &config.cargo_args {
         if config.stream_output {
             output = Command::new("cargo")
@@ -266,6 +286,22 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
 
 
     //Post compilation
+    //for shatter in shatter_states {
+    //    shatter.post_compilation();
+    //}
+    let root_id = src.metadata.resolve.unwrap().root.unwrap();
+
+    for pkg in src.metadata.packages {
+        if pkg.id == root_id {
+            eprintln!("I SURE FOUND IT {}", pkg.name);
+            for target in pkg.targets {
+                if target.kind.contains(&String::from("bin")) {
+                    eprintln!("E-GADS a binary called {}", target.name);
+                    eprintln!("I expect my binary at {}\\{}", src.target_dir, target.name);
+                }
+            }
+        }
+    }
 
     if let Some(cargo_args) = &config.cargo_args {
         if config.need_run {

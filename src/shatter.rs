@@ -74,7 +74,7 @@ pub enum IntegrityCheckType {
     //TODO: Define and implement other variations like every Nth byte
 }
 
-struct Shatter {
+pub struct Shatter {
     inside_unsafe_block: bool,
     integrity_checks: HashMap<IntegrityCheckType, Vec<u8>>
 }
@@ -312,6 +312,10 @@ impl Shatter {
         };
         data.stmts
     }
+
+    pub fn post_compilation(&mut self, _path: &Utf8PathBuf) {
+        os::integrity_check_post_compilation();
+    }
 }
 
 impl VisitMut for Shatter {
@@ -439,15 +443,13 @@ impl VisitMut for Shatter {
 }
 
 //TODO: Add configuration for conditional shatter injection
-pub fn shatter(input: &mut File) {
+pub fn shatter(input: &mut File) -> Shatter {
     let mut state = Shatter {
         inside_unsafe_block: false,
         integrity_checks: HashMap::new(),
     };
     Shatter::visit_file_mut(&mut state, input);
+    state
 }
 
-pub fn shatter_post_compilation(_path: &Utf8PathBuf) {
-    os::integrity_check_post_compilation();
-}
 
