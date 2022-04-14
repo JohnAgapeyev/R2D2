@@ -86,22 +86,18 @@ where
     output
 }
 
-//Returns the hash and the salt if one was used
-pub fn hash<Hash>(data: &[u8], add_salt: bool) -> (Vec<u8>, Option<Vec<u8>>)
+pub fn hash<Hash>(data: &[u8], salt: Option<&[u8]>) -> Vec<u8>
 where
     Hash: Digest,
     //We only want 512 bit hashes because why not?
     Hash::OutputSize: IsEqual<U64, Output = True>,
 {
-    if !add_salt {
-        return (Vec::from(Hash::digest(data).as_slice()), None);
-    }
-    //256 bit salt, probably excessive, but oh well
-    let mut salt = [0u8; 32];
-    OsRng.fill_bytes(&mut salt);
-    let mut h = Hash::new_with_prefix(&salt);
+    let mut h = match salt {
+        Some(salt) => Hash::new_with_prefix(salt),
+        None => Hash::new(),
+    };
     h.update(data);
-    (Vec::from(h.finalize().as_slice()), Some(Vec::from(salt)))
+    Vec::from(h.finalize().as_slice())
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq)]

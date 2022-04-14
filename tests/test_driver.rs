@@ -176,10 +176,10 @@ mod single {
     #[test]
     fn assert_shatter_functional() {
         let output = functional_test("tests/single/07-assert_shatter");
-        assert!(output.status.success());
 
         io::stdout().write_all(&output.stdout).unwrap();
         io::stderr().write_all(&output.stderr).unwrap();
+        assert!(output.status.success());
     }
 }
 

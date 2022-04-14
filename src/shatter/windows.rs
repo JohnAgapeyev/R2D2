@@ -77,10 +77,10 @@ unsafe fn test_pe_inspection() {
 
             let text_slice = &*ptr::slice_from_raw_parts(addr, size as usize);
 
-            let (hash, salt) = crypto::hash::<crypto::Blake2b512>(text_slice, true);
+            //let (hash, salt) = crypto::hash::<crypto::Blake2b512>(text_slice, true);
 
-            eprintln!("Hash {hash:x?}");
-            eprintln!("Salt {salt:x?}");
+            //eprintln!("Hash {hash:x?}");
+            //eprintln!("Salt {salt:x?}");
         }
     }
     //eprintln!("Did we get it {pe:#?}");
@@ -90,7 +90,20 @@ pub fn generate_integrity_check() -> ShatterCondition {
     //unsafe {
     //    test_pe_inspection();
     //}
+
+    //TODO: Initialize this outside of the quote
+    let mut salt = [0u8; 32];
+    OsRng.fill_bytes(&mut salt);
+
+    //Stand-in for magic hash value to be replaced post compilation
+    let hash = [0xabu8; 64];
+
     let setup = quote! {
+        let mut calculated_hash: Vec<u8> = Vec::new();
+
+        let target_hash = vec![#(#hash),*];
+        let salt = vec![#(#salt),*];
+
         unsafe {
             let null_pcstr = r2d2::windows::core::PCSTR(::std::ptr::null());
             let real_handle = r2d2::windows::Win32::System::LibraryLoader::GetModuleHandleA(null_pcstr).0;
@@ -129,13 +142,16 @@ pub fn generate_integrity_check() -> ShatterCondition {
 
                     let text_slice = &*::std::ptr::slice_from_raw_parts(addr, size as usize);
 
-                    let (hash, salt) = r2d2::crypto::hash::<r2d2::crypto::Blake2b512>(text_slice, true);
-
-                    eprintln!("Hash {hash:x?}");
-                    eprintln!("Salt {salt:x?}");
+                    calculated_hash = r2d2::crypto::hash::<r2d2::crypto::Blake2b512>(text_slice, Some(&salt));
+                    break;
                 }
             }
         }
+
+        eprintln!("Salt {salt:x?}");
+        eprintln!("Target {target_hash:x?}");
+        eprintln!("Actual {calculated_hash:x?}");
+        eprintln!("");
     };
     let check = quote! { false };
     ShatterCondition { setup, check }
