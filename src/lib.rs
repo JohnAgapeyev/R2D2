@@ -225,6 +225,8 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
         shatter_states = obfuscate_dir(&dest)?;
     }
 
+    eprintln!("Target dir is {:?}", &src.target_dir);
+
     let mut command: Child;
 
     //TODO: I really hate this duplication
@@ -247,7 +249,7 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
             .args(cargo_args)
             .current_dir(&dest)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            //.stderr(Stdio::piped())
             .spawn().unwrap();
     } else {
         command = Command::new("cargo")
@@ -257,7 +259,7 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
             .arg(&src.target_dir)
             .current_dir(&dest)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            //.stderr(Stdio::piped())
             .spawn().unwrap();
     }
 
@@ -274,6 +276,9 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
                     executables.push(binary_path);
                 }
             },
+            Message::BuildFinished(_) => {
+                println!("Build is done");
+            }
             Message::TextLine(line) => {
                 println!("{line}");
             }
@@ -281,21 +286,24 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
         }
     }
 
-    let err_reader = BufReader::new(command.stderr.take().unwrap());
-    for message in Message::parse_stream(err_reader) {
-        match message.unwrap() {
-            Message::CompilerMessage(msg) => {
-                eprintln!("{msg}");
-            },
-            Message::TextLine(line) => {
-                eprintln!("{line}");
-            }
-            _ => ()
-        }
-    }
+    //let err_reader = BufReader::new(command.stderr.take().unwrap());
+    //for message in Message::parse_stream(err_reader) {
+    //    match message.unwrap() {
+    //        Message::CompilerMessage(msg) => {
+    //            eprintln!("{msg}");
+    //        },
+    //        Message::TextLine(line) => {
+    //            eprintln!("{line}");
+    //        }
+    //        _ => ()
+    //    }
+    //}
+
+    eprintln!("Waiting for command exit");
 
     let status = command.wait().expect("Couldn't get cargo's exit status");
 
+    eprintln!("Post command exit {status:#?}");
 
     //Post compilation
     for binary in executables {

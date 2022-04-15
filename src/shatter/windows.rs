@@ -105,9 +105,12 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &Vec<Integri
     let opts = ParseOptions { resolve_rva: true };
     let pe: PE = PE::parse_with_opts(&contents, &opts).unwrap();
 
-    let dummy_init: Vec<u8> = Vec::new();
-    let mut text_slice: &[u8] = &dummy_init;
-    let mut data_slice: &[u8] = &dummy_init;
+    let mut text_start: usize = 0;
+    let mut text_len: usize = 0;
+    let mut data_start: usize = 0;
+    let mut data_len: usize = 0;
+    let mut text_slice: Vec<u8> = Vec::new();
+    let mut data_slice: Vec<u8> = Vec::new();
 
     for section in pe.sections {
         let name = section.name().unwrap_or_default();
@@ -129,41 +132,42 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &Vec<Integri
         let size = cmp::min(section.virtual_size, section.size_of_raw_data) as usize;
 
         //eprintln!("Section name {name} with size {size}");
-        let section_slice = &contents[addr..addr+size];
+        let mut section_slice = &mut contents[addr..addr+size];
 
         //if (section.characteristics & pe::section_table::IMAGE_SCN_CNT_CODE) != 0 {
         if name == ".text" {
             eprintln!("Physical {} Virtual {}", section.size_of_raw_data, section.virtual_size);
-            text_slice = section_slice;
+            text_slice = Vec::from(section_slice);
+            text_start = addr;
+            text_len = size;
         //} else if (section.characteristics & pe::section_table::IMAGE_SCN_CNT_INITIALIZED_DATA) != 0 {
         } else if name == ".rdata" {
-            data_slice = section_slice;
+            data_slice = Vec::from(section_slice);
+            data_start = addr;
+            data_len = size;
         }
     }
 
     for check in checks {
         match check.check_type {
             IntegrityCheckType::ALL => {
-                let hash = &check.hash;
-                let salt = &check.salt;
-
-                let real_hash = crypto::hash::<crypto::Blake2b512>(text_slice, Some(&salt));
+                let offset = find_subsequence(&data_slice, &check.hash).unwrap();
+                let real_hash = crypto::hash::<crypto::Blake2b512>(&text_slice, Some(&check.salt));
                 eprintln!("Post Calculating against hash of len {}", text_slice.len());
 
-                eprintln!("Hash {hash:x?}");
-                eprintln!("REAL {real_hash:x?}");
-                eprintln!("Salt {salt:x?}");
+                contents[data_start+offset..data_start+offset+64].copy_from_slice(&real_hash);
 
-                if let Some(offset) = find_subsequence(data_slice, hash.as_slice()) {
-                    //eprintln!("Holy shit I found it at byte offset {offset} in slice {name}");
-                }
+                eprintln!("Hash {:x?}", &check.hash);
+                eprintln!("REAL {real_hash:x?}");
+                eprintln!("Salt {:x?}", &check.salt);
+
+
             }
             //Currently we don't have any other kinds of hashing checks
         }
     }
 
-    for check in checks {
-    }
+    fs::write(path, contents).unwrap();
 }
 
 pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
@@ -185,6 +189,7 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
     let setup = quote! {
         #[used]
         #[link_section = ".rdata"]
+        #[allow(non_upper_case_globals)]
         static #static_ident: [u8; #hash_size] = [#(#hash),*];
 
         let salt = vec![#(#salt),*];
