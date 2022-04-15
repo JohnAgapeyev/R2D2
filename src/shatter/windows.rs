@@ -151,17 +151,19 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &Vec<Integri
     for check in checks {
         match check.check_type {
             IntegrityCheckType::ALL => {
-                let offset = find_subsequence(&data_slice, &check.hash).unwrap();
-                let real_hash = crypto::hash::<crypto::Blake2b512>(&text_slice, Some(&check.salt));
-                eprintln!("Post Calculating against hash of len {}", text_slice.len());
+                //TODO: Is this safe? Can we guarantee that no hash data means no check?
+                //I really would like to avoid crashing if the linker doesn't want our stuff
+                //Might have to move the static injection to file scope just in case
+                if let Some(offset) = find_subsequence(&data_slice, &check.hash) {
+                    let real_hash = crypto::hash::<crypto::Blake2b512>(&text_slice, Some(&check.salt));
+                    eprintln!("Post Calculating against hash of len {}", text_slice.len());
 
-                contents[data_start+offset..data_start+offset+64].copy_from_slice(&real_hash);
+                    contents[data_start+offset..data_start+offset+64].copy_from_slice(&real_hash);
 
-                eprintln!("Hash {:x?}", &check.hash);
-                eprintln!("REAL {real_hash:x?}");
-                eprintln!("Salt {:x?}", &check.salt);
-
-
+                    eprintln!("Hash {:x?}", &check.hash);
+                    eprintln!("REAL {real_hash:x?}");
+                    eprintln!("Salt {:x?}", &check.salt);
+                }
             }
             //Currently we don't have any other kinds of hashing checks
         }
