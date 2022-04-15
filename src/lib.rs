@@ -184,8 +184,8 @@ pub struct SourceInformation {
 pub fn get_src_dir() -> SourceInformation {
     let metadata = MetadataCommand::new().exec().unwrap();
     SourceInformation {
-        workspace_root: metadata.workspace_root.clone(),
-        target_dir: metadata.target_directory.clone(),
+        workspace_root: metadata.workspace_root,
+        target_dir: metadata.target_directory,
     }
 }
 
@@ -274,6 +274,9 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
                     executables.push(binary_path);
                 }
             },
+            Message::TextLine(line) => {
+                println!("{line}");
+            }
             _ => ()
         }
     }
@@ -284,6 +287,9 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
             Message::CompilerMessage(msg) => {
                 eprintln!("{msg}");
             },
+            Message::TextLine(line) => {
+                eprintln!("{line}");
+            }
             _ => ()
         }
     }
@@ -312,14 +318,14 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
                 .current_dir(&dest)
                 .output().unwrap();
             } else {
-                //TODO: Need to double check that the run command doesn't also rebuild after
-                //post-compilation
-                output = Command::new("cargo")
-                    .arg("run")
-                    .arg("--target-dir")
-                    .arg(&src.target_dir)
-                    .current_dir(&dest)
-                    .output().unwrap();
+            //TODO: Need to double check that the run command doesn't also rebuild after
+            //post-compilation
+            output = Command::new("cargo")
+                .arg("run")
+                .arg("--target-dir")
+                .arg(&src.target_dir)
+                .current_dir(&dest)
+                .output().unwrap();
         }
     } else {
         //TODO: Need to figure out what kind of info we want to save/expose for testing/error

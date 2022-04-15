@@ -47,7 +47,7 @@ mod windows;
 #[cfg(target_os = "windows")]
 use crate::shatter::windows as os;
 
-const DEBUG_KILLDATE_DURATION_SECS: u64 = 60;
+const DEBUG_KILLDATE_DURATION_SECS: u64 = 6000;
 
 enum ShatterType {
     //Garbage code to foil static analysis tools, never executed
@@ -458,30 +458,6 @@ pub fn shatter(input: &mut File) -> Shatter {
         integrity_checks: Vec::new(),
     };
     Shatter::visit_file_mut(&mut state, input);
-
-    //Now let's inject all the generated integrity check constants at the global scope
-
-    for check in &state.integrity_checks {
-
-        let static_ident = generate_unique_ident();
-
-        //TODO: Fetch this from the generic array and hash digest trait value
-        let hash_size = 64usize;
-
-        let hash = &check.hash;
-        let salt = &check.salt;
-
-        let item_static = quote! {
-            #[used]
-            #[link_section = ".data"]
-            static #static_ident: [u8; #hash_size] = [#(#hash),*];
-        };
-
-        let parsed_static = syn::parse2::<ItemStatic>(item_static).unwrap();
-
-        let item = Item::Static(parsed_static);
-        input.items.push(item);
-    }
 
     state
 }
