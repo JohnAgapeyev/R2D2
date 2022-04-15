@@ -25,7 +25,7 @@ use camino::Utf8PathBuf;
 use std::collections::HashMap;
 
 use crate::crypto::{self, hash};
-use crate::shatter::{self, IntegrityCheckType, ShatterCondition};
+use crate::shatter::{self, IntegrityCheckType, IntegrityCheck, ShatterCondition};
 
 //Workaround to self obfuscate (since we can't add ourselves as a dependency)
 #[allow(unused_imports)]
@@ -86,7 +86,7 @@ unsafe fn test_pe_inspection() {
     //eprintln!("Did we get it {pe:#?}");
 }
 
-pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &HashMap<IntegrityCheckType, (Vec<u8>, Vec<u8>)>) {
+pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &Vec<IntegrityCheck>) {
     let contents = fs::read(path).unwrap();
 
     eprintln!("What's the data like? {}", contents.len());
@@ -119,9 +119,12 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &HashMap<Int
         }
     }
 
-    for (check_type, (hash, salt)) in checks {
-        match check_type {
+    for check in checks {
+        match check.check_type {
             IntegrityCheckType::ALL => {
+                let hash = &check.hash;
+                let salt = &check.hash;
+
                 let real_hash = crypto::hash::<crypto::Blake2b512>(text_slice, Some(&salt));
 
                 eprintln!("Hash {hash:x?}");
@@ -133,7 +136,7 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &HashMap<Int
     }
 }
 
-pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec<u8>, Vec<u8>)) {
+pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
     //unsafe {
     //    test_pe_inspection();
     //}
@@ -202,8 +205,13 @@ pub fn generate_integrity_check() -> (ShatterCondition, (IntegrityCheckType, Vec
         eprintln!("");
     };
     let check = quote! { false };
+
     (
         ShatterCondition { setup, check },
-        (IntegrityCheckType::ALL, Vec::from(hash), Vec::from(salt)),
+        IntegrityCheck {
+            check_type: IntegrityCheckType::ALL,
+            hash: Vec::from(hash),
+            salt: Vec::from(salt)
+        }
     )
 }

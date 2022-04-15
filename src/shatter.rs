@@ -67,17 +67,25 @@ enum ConditionType {
     KILLDATE,
 }
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum IntegrityCheckType {
     //Hash every byte
     ALL,
     //TODO: Define and implement other variations like every Nth byte
 }
 
+//TODO: Make this generic over the digest used
+#[derive(Debug, Clone)]
+pub struct IntegrityCheck {
+    pub check_type: IntegrityCheckType,
+    //TODO: Use a fixed size buffer instead of a vec
+    pub hash: Vec<u8>,
+    pub salt: Vec<u8>,
+}
+
 pub struct Shatter {
     inside_unsafe_block: bool,
-    //TODO: This is wrong, it is overwriting itself, probably needs to be a Vec of structs instead
-    integrity_checks: HashMap<IntegrityCheckType, (Vec<u8>, Vec<u8>)>
+    integrity_checks: Vec<IntegrityCheck>
 }
 
 //TODO: Is it better to type check this and pay the double conversion cost?
@@ -119,8 +127,8 @@ impl Shatter {
 
     //TODO: Implement
     fn generate_integrity_check(&mut self) -> ShatterCondition {
-        let (cond, (hash_type, hash, salt)) = os::generate_integrity_check();
-        self.integrity_checks.insert(hash_type, (hash, salt));
+        let (cond, check) = os::generate_integrity_check();
+        self.integrity_checks.push(check);
         cond
     }
 
@@ -447,18 +455,21 @@ impl VisitMut for Shatter {
 pub fn shatter(input: &mut File) -> Shatter {
     let mut state = Shatter {
         inside_unsafe_block: false,
-        integrity_checks: HashMap::new(),
+        integrity_checks: Vec::new(),
     };
     Shatter::visit_file_mut(&mut state, input);
 
     //Now let's inject all the generated integrity check constants at the global scope
 
-    for (check_type, (hash, salt)) in &state.integrity_checks {
+    for check in &state.integrity_checks {
 
         let static_ident = generate_unique_ident();
 
         //TODO: Fetch this from the generic array and hash digest trait value
         let hash_size = 64usize;
+
+        let hash = &check.hash;
+        let salt = &check.salt;
 
         let item_static = quote! {
             #[used]
