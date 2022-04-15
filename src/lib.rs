@@ -153,7 +153,7 @@ pub fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf) -> io::Result<()> {
                     .unwrap(),
             )
         })
-        .filter(|path| !path.to_string().is_empty() && !path.to_string().starts_with("target/"))
+        .filter(|path| !path.to_string().is_empty() && !path.to_string().starts_with("target"))
         .partition(|e| e.is_dir());
 
     for dir in dirs {

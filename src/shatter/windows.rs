@@ -175,7 +175,6 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
     //    test_pe_inspection();
     //}
 
-    //TODO: Initialize this outside of the quote
     let mut salt = [0u8; 32];
     OsRng.fill_bytes(&mut salt);
 
@@ -192,9 +191,9 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
         #[allow(non_upper_case_globals)]
         static #static_ident: [u8; #hash_size] = [#(#hash),*];
 
-        let salt = vec![#(#salt),*];
+        let salt = ::std::vec![#(#salt),*];
 
-        let mut calculated_hash: Vec<u8> = Vec::new();
+        let mut calculated_hash: ::std::vec::Vec<u8> = ::std::vec::Vec::new();
 
         unsafe {
             let null_pcstr = r2d2::windows::core::PCSTR(::std::ptr::null());
@@ -202,12 +201,8 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
             let handle = real_handle as *const u8;
             assert!(!handle.is_null());
 
-            eprintln!("Test {handle:#?}");
-
             let path = ::std::env::current_exe().unwrap();
             let total_size = ::std::fs::metadata(path).unwrap().len();
-
-            eprintln!("Our file size is {total_size}");
 
             let header_slice = &*::std::ptr::slice_from_raw_parts(handle, total_size as usize);
             //Need to explicitly disable rva resolution since filenames don't exist in memory
@@ -222,11 +217,7 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
                     continue
                 }
 
-                //if (section.characteristics & r2d2::goblin::pe::section_table::IMAGE_SCN_CNT_CODE) != 0 {
                 if name == ".text" {
-                    //eprintln!("Section {name} has executable code in it");
-                    //eprintln!("Section details {section:#x?}");
-
                     let base = pe.image_base;
                     /*
                      * Section sizing is different between memory and on-disk
@@ -239,25 +230,15 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
                     let size = ::std::cmp::min(section.virtual_size, section.size_of_raw_data) as usize;
                     let addr = (base as *const u8).add(section.virtual_address as usize);
 
-                    //eprintln!("What do we have 0x{base:x}, 0x{size:x}, {addr:#?}");
-
                     let text_slice = &*::std::ptr::slice_from_raw_parts(addr, size as usize);
-
-                    eprintln!("Calculating against hash of len {}", text_slice.len());
-                    eprintln!("Physical {} Virtual {}", section.size_of_raw_data, section.virtual_size);
 
                     calculated_hash = r2d2::crypto::hash::<r2d2::crypto::Blake2b512>(text_slice, Some(&salt));
                     break;
                 }
             }
         }
-
-        eprintln!("Salt {salt:x?}");
-        eprintln!("Target {:x?}", #static_ident);
-        eprintln!("Actual {calculated_hash:x?}");
-        eprintln!("");
     };
-    let check = quote! { false };
+    let check = quote! { calculated_hash.as_slice() != #static_ident.as_slice() };
 
     (
         ShatterCondition { setup, check },
