@@ -42,51 +42,6 @@ pub fn generate_anti_debug_check() -> ShatterCondition {
     ShatterCondition { setup, check }
 }
 
-unsafe fn test_pe_inspection() {
-    let null_pcstr = PCSTR(ptr::null());
-    let real_handle = GetModuleHandleA(null_pcstr).0;
-    let handle = real_handle as *const u8;
-    assert!(!handle.is_null());
-
-    eprintln!("Test {handle:#?}");
-
-    let path = env::current_exe().unwrap();
-    let total_size = fs::metadata(path).unwrap().len();
-
-    eprintln!("Our file size is {total_size}");
-
-    let header_slice = &*ptr::slice_from_raw_parts(handle, total_size as usize);
-    //Need to explicitly disable rva resolution since filenames don't exist in memory
-    let opts = ParseOptions { resolve_rva: false };
-    let pe: PE = PE::parse_with_opts(header_slice, &opts).unwrap();
-
-    for section in pe.sections {
-        let name = section.name().unwrap_or_default();
-        if name.is_empty() {
-            continue;
-        }
-
-        if (section.characteristics & pe::section_table::IMAGE_SCN_CNT_CODE) != 0 {
-            eprintln!("Section {name} has executable code in it");
-            eprintln!("Section details {section:#x?}");
-
-            let base = pe.image_base;
-            let size = section.virtual_size;
-            let addr = (base as *const u8).add(section.virtual_address as usize);
-
-            eprintln!("What do we have 0x{base:x}, 0x{size:x}, {addr:#?}");
-
-            let text_slice = &*ptr::slice_from_raw_parts(addr, size as usize);
-
-            //let (hash, salt) = crypto::hash::<crypto::Blake2b512>(text_slice, true);
-
-            //eprintln!("Hash {hash:x?}");
-            //eprintln!("Salt {salt:x?}");
-        }
-    }
-    //eprintln!("Did we get it {pe:#?}");
-}
-
 fn find_subsequence<T>(haystack: &[T], needle: &[T]) -> Option<usize>
     where for<'a> &'a [T]: PartialEq
 {
@@ -131,16 +86,13 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &Vec<Integri
          */
         let size = cmp::min(section.virtual_size, section.size_of_raw_data) as usize;
 
-        //eprintln!("Section name {name} with size {size}");
         let mut section_slice = &mut contents[addr..addr+size];
 
-        //if (section.characteristics & pe::section_table::IMAGE_SCN_CNT_CODE) != 0 {
         if name == ".text" {
             eprintln!("Physical {} Virtual {}", section.size_of_raw_data, section.virtual_size);
             text_slice = Vec::from(section_slice);
             text_start = addr;
             text_len = size;
-        //} else if (section.characteristics & pe::section_table::IMAGE_SCN_CNT_INITIALIZED_DATA) != 0 {
         } else if name == ".rdata" {
             data_slice = Vec::from(section_slice);
             data_start = addr;
@@ -151,10 +103,16 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &Vec<Integri
     for check in checks {
         match check.check_type {
             IntegrityCheckType::ALL => {
-                //TODO: Is this safe? Can we guarantee that no hash data means no check?
-                //I really would like to avoid crashing if the linker doesn't want our stuff
-                //Might have to move the static injection to file scope just in case
-                if let Some(offset) = find_subsequence(&data_slice, &check.hash) {
+                /*
+                 * Check to find the salt in .text
+                 * This insures we know of a check present in the code
+                 * We then do an .unwrap on a search for the hash in .rdata
+                 * Idea being that if we find a salt, the hash must exist as the check therefore is
+                 * present. If the salt doesn't exist, the check is probably elided, so we can
+                 * forget about the hash whether it exists or not, since it won't be checked.
+                 */
+                if let Some(_) = find_subsequence(&text_slice, &check.salt) {
+                    let offset = find_subsequence(&data_slice, &check.hash).unwrap();
                     let real_hash = crypto::hash::<crypto::Blake2b512>(&text_slice, Some(&check.salt));
                     eprintln!("Post Calculating against hash of len {}", text_slice.len());
 
@@ -173,10 +131,6 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &Vec<Integri
 }
 
 pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
-    //unsafe {
-    //    test_pe_inspection();
-    //}
-
     let mut salt = [0u8; 32];
     OsRng.fill_bytes(&mut salt);
 
@@ -185,7 +139,9 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
     OsRng.fill_bytes(&mut hash);
 
     let static_ident = generate_unique_ident();
+    let salt_ident = generate_unique_ident();
     let hash_size = 64usize;
+    let salt_size = 32usize;
 
     let setup = quote! {
         #[used]
@@ -193,7 +149,10 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
         #[allow(non_upper_case_globals)]
         static #static_ident: [u8; #hash_size] = [#(#hash),*];
 
-        let salt = ::std::vec![#(#salt),*];
+        #[used]
+        #[link_section = ".text"]
+        #[allow(non_upper_case_globals)]
+        static #salt_ident: [u8; #salt_size] = [#(#salt),*];
 
         let mut calculated_hash: ::std::vec::Vec<u8> = ::std::vec::Vec::new();
 
@@ -234,7 +193,7 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
 
                     let text_slice = &*::std::ptr::slice_from_raw_parts(addr, size as usize);
 
-                    calculated_hash = r2d2::crypto::hash::<r2d2::crypto::Blake2b512>(text_slice, Some(&salt));
+                    calculated_hash = r2d2::crypto::hash::<r2d2::crypto::Blake2b512>(text_slice, Some(&#salt_ident));
                     break;
                 }
             }
