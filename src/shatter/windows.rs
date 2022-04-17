@@ -1,4 +1,3 @@
-#![allow(unused_imports)]
 use goblin::pe::header::*;
 use goblin::pe::optional_header::*;
 use goblin::pe::options::ParseOptions;
@@ -22,7 +21,6 @@ use windows::Win32::Storage::FileSystem::GetFileSizeEx;
 use windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent;
 use windows::Win32::System::LibraryLoader::GetModuleHandleA;
 use camino::Utf8PathBuf;
-use std::collections::HashMap;
 use std::cmp;
 
 use crate::crypto::{self, hash};

@@ -200,7 +200,7 @@ pub struct R2D2Config<'a> {
     pub stream_output: bool,
 }
 
-pub fn build(config: &R2D2Config) -> io::Result<Output> {
+pub fn build(config: &R2D2Config) -> io::Result<ExitStatus> {
     let src = get_src_dir();
     let mut dest = generate_temp_folder_name(config.dest_name);
 
@@ -230,16 +230,6 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
     let mut command: Child;
 
     //TODO: I really hate this duplication
-    /*
-     * TODO: Need to grab output as json and parse it with the metadata crate
-     * That will give me artifact messages for every file the compiler generates
-     * This includes paths, release/debug, and whether it's an executable
-     * I can use this to search for my magic strings and replace them post compilation
-     *
-     * The key is Message::parse_stream in the metadata crate
-     * That gives me an enum, and I want a CompilerArtifact enum variant
-     * But that is a lot of work, and it's been a long day, that's for later
-     */
     if let Some(cargo_args) = &config.cargo_args {
         command = Command::new("cargo")
             .arg("build")
@@ -297,9 +287,8 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
         }
     }
 
-    let output: Output;
-
     if config.need_run {
+        let output: Output;
         if let Some(cargo_args) = &config.cargo_args {
             output = Command::new("cargo")
                 .arg("run")
@@ -316,18 +305,9 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
                 .current_dir(&dest)
                 .output().unwrap();
         }
-    } else {
-        //TODO: Need to figure out what kind of info we want to save/expose for testing/error
-        //handling
-        output = Output {
-            status: ExitStatus::from_raw(0),
-            stdout: Vec::new(),
-            stderr: Vec::new(),
-        };
+        return Ok(output.status);
     }
 
-
-    //Ok(test)
-    Ok(output)
+    Ok(status)
 }
 

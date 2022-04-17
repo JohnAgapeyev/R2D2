@@ -9,7 +9,6 @@ use syn::spanned::Spanned;
 use syn::token::Brace;
 use syn::visit_mut::*;
 use syn::*;
-use std::collections::HashMap;
 use camino::Utf8PathBuf;
 use std::cmp::{Eq, PartialEq};
 

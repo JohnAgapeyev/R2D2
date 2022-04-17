@@ -5,8 +5,7 @@ use std::fs;
 use std::fs::DirBuilder;
 use std::io;
 use std::io::Write;
-use std::process::Command;
-use std::process::Output;
+use std::process::{Command, ExitStatus};
 use std::sync::{Mutex, MutexGuard};
 
 const TEST_DIRECTORY: &str = ".r2d2_test_dir";
@@ -29,7 +28,7 @@ fn lock_filesystem() -> MutexGuard<'static, ()> {
     }
 }
 
-fn compile_test(path: &str) -> Output {
+fn compile_test(path: &str) -> ExitStatus {
     let _lock = lock_filesystem();
 
     let config = R2D2Config {
@@ -44,7 +43,7 @@ fn compile_test(path: &str) -> Output {
     build(&config).unwrap()
 }
 
-fn functional_test(path: &str) -> Output {
+fn functional_test(path: &str) -> ExitStatus {
     let _lock = lock_filesystem();
 
     let config = R2D2Config {
@@ -64,29 +63,26 @@ mod single {
 
     #[test]
     fn hello_world_compile() {
-        let output = compile_test("tests/single/01-hello_world");
-
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
-        assert!(output.status.success());
+        let status = compile_test("tests/single/01-hello_world");
+        assert!(status.success());
     }
 
     #[test]
     fn hello_world_functional() {
-        let output = functional_test("tests/single/01-hello_world");
-        assert!(output.status.success());
+        let status = functional_test("tests/single/01-hello_world");
+        assert!(status.success());
     }
 
     #[test]
     fn prints_compile() {
-        let output = compile_test("tests/single/02-prints");
-        assert!(output.status.success());
+        let status = compile_test("tests/single/02-prints");
+        assert!(status.success());
     }
 
     #[test]
     fn prints_functional() {
-        let output = functional_test("tests/single/02-prints");
-        assert!(output.status.success());
+        let status = functional_test("tests/single/02-prints");
+        assert!(status.success());
     }
 
     #[cfg(target_os = "linux")]
@@ -94,68 +90,57 @@ mod single {
         use crate::*;
         #[test]
         fn crazy_compile() {
-            let output = compile_test("tests/single/03-crazy");
-            io::stdout().write_all(&output.stdout).unwrap();
-            io::stderr().write_all(&output.stderr).unwrap();
-            assert!(output.status.success());
+            let status = compile_test("tests/single/03-crazy");
+            assert!(status.success());
         }
     }
 
     #[test]
     fn shuffle_prints_compile() {
-        let output = compile_test("tests/single/04-shuffle_prints");
-        assert!(output.status.success());
+        let status = compile_test("tests/single/04-shuffle_prints");
+        assert!(status.success());
     }
 
     #[test]
     fn shuffle_prints_functional() {
-        let output = functional_test("tests/single/04-shuffle_prints");
-        assert!(output.status.success());
+        let status = functional_test("tests/single/04-shuffle_prints");
+        assert!(status.success());
     }
 
     #[test]
     fn shuffle_let_compile() {
-        let output = compile_test("tests/single/05-shuffle_let");
-        assert!(output.status.success());
+        let status = compile_test("tests/single/05-shuffle_let");
+        assert!(status.success());
     }
 
     #[test]
     fn shuffle_let_functional() {
-        let output = functional_test("tests/single/05-shuffle_let");
-        assert!(output.status.success());
+        let status = functional_test("tests/single/05-shuffle_let");
+        assert!(status.success());
     }
 
     #[test]
     fn shuffle_nested_compile() {
-        let output = compile_test("tests/single/06-shuffle_nested");
-        assert!(output.status.success());
+        let status = compile_test("tests/single/06-shuffle_nested");
+        assert!(status.success());
     }
 
     #[test]
     fn shuffle_nested_functional() {
-        let output = functional_test("tests/single/06-shuffle_nested");
-        assert!(output.status.success());
-
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
+        let status = functional_test("tests/single/06-shuffle_nested");
+        assert!(status.success());
     }
 
     #[test]
     fn assert_shatter_compile() {
-        let output = compile_test("tests/single/07-assert_shatter");
-
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
-        assert!(output.status.success());
+        let status = compile_test("tests/single/07-assert_shatter");
+        assert!(status.success());
     }
 
     #[test]
     fn assert_shatter_functional() {
-        let output = functional_test("tests/single/07-assert_shatter");
-
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
-        assert!(output.status.success());
+        let status = functional_test("tests/single/07-assert_shatter");
+        assert!(status.success());
     }
 }
 
@@ -164,10 +149,7 @@ mod complex {
 
     #[test]
     fn rand_compile() {
-        let output = compile_test("tests/complex/rand");
-
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
-        assert!(output.status.success());
+        let status = compile_test("tests/complex/rand");
+        assert!(status.success());
     }
 }
