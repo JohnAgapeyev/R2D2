@@ -33,6 +33,7 @@ use crate::shatter::{self, generate_unique_ident, IntegrityCheckType, IntegrityC
 use crate as r2d2;
 
 pub fn generate_anti_debug_check() -> ShatterCondition {
+    //TODO: Implement more of these
     let setup = quote! {};
     let check = quote! {
         unsafe {
@@ -42,6 +43,7 @@ pub fn generate_anti_debug_check() -> ShatterCondition {
     ShatterCondition { setup, check }
 }
 
+//TODO: This is useful enough to pull out into a utils crate/module
 fn find_subsequence<T>(haystack: &[T], needle: &[T]) -> Option<usize>
     where for<'a> &'a [T]: PartialEq
 {
@@ -60,6 +62,7 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &Vec<Integri
     let opts = ParseOptions { resolve_rva: true };
     let pe: PE = PE::parse_with_opts(&contents, &opts).unwrap();
 
+    //TODO: Clean up this mess
     let mut text_start: usize = 0;
     let mut text_len: usize = 0;
     let mut data_start: usize = 0;
@@ -72,8 +75,6 @@ pub fn integrity_check_post_compilation(path: &Utf8PathBuf, checks: &Vec<Integri
         if name.is_empty() {
             continue;
         }
-        //eprintln!("Section {name} has initialized data in it");
-        //eprintln!("Section details {section:#x?}");
 
         let addr = section.pointer_to_raw_data as usize;
         /*
@@ -140,6 +141,7 @@ pub fn generate_integrity_check() -> (ShatterCondition, IntegrityCheck) {
 
     let static_ident = generate_unique_ident();
     let salt_ident = generate_unique_ident();
+    //TODO: Remove these magic numbers
     let hash_size = 64usize;
     let salt_size = 32usize;
 

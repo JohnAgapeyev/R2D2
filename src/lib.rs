@@ -6,6 +6,7 @@ use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{self, BufReader, ErrorKind};
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::os::windows::process::ExitStatusExt;
+use std::path;
 use walkdir::WalkDir;
 
 //Public modules referenced in generated code
@@ -153,7 +154,8 @@ pub fn copy_dir(from: &Utf8PathBuf, to: &Utf8PathBuf) -> io::Result<()> {
                     .unwrap(),
             )
         })
-        .filter(|path| !path.to_string().is_empty() && !path.to_string().starts_with("target"))
+        .filter(|path| !path.to_string().is_empty()
+            && !path.to_string().starts_with(&format!("target{}", path::MAIN_SEPARATOR)))
         .partition(|e| e.is_dir());
 
     for dir in dirs {
@@ -213,7 +215,7 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
 
     if let Some(partial) = config.obfuscate_dir {
         let mut true_dest_str = String::from(dest.as_str());
-        true_dest_str.push('/');
+        true_dest_str.push(path::MAIN_SEPARATOR);
         true_dest_str.push_str(partial);
 
         dest = Utf8PathBuf::from(true_dest_str);
@@ -224,8 +226,6 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
     if config.need_obfuscate {
         shatter_states = obfuscate_dir(&dest)?;
     }
-
-    eprintln!("Target dir is {:?}", &src.target_dir);
 
     let mut command: Child;
 
@@ -249,7 +249,6 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
             .args(cargo_args)
             .current_dir(&dest)
             .stdout(Stdio::piped())
-            //.stderr(Stdio::piped())
             .spawn().unwrap();
     } else {
         command = Command::new("cargo")
@@ -259,7 +258,6 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
             .arg(&src.target_dir)
             .current_dir(&dest)
             .stdout(Stdio::piped())
-            //.stderr(Stdio::piped())
             .spawn().unwrap();
     }
 
@@ -286,19 +284,6 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
         }
     }
 
-    //let err_reader = BufReader::new(command.stderr.take().unwrap());
-    //for message in Message::parse_stream(err_reader) {
-    //    match message.unwrap() {
-    //        Message::CompilerMessage(msg) => {
-    //            eprintln!("{msg}");
-    //        },
-    //        Message::TextLine(line) => {
-    //            eprintln!("{line}");
-    //        }
-    //        _ => ()
-    //    }
-    //}
-
     eprintln!("Waiting for command exit");
 
     let status = command.wait().expect("Couldn't get cargo's exit status");
@@ -316,8 +301,6 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
 
     if config.need_run {
         if let Some(cargo_args) = &config.cargo_args {
-            //TODO: Need to double check that the run command doesn't also rebuild after
-            //post-compilation
             output = Command::new("cargo")
                 .arg("run")
                 .arg("--target-dir")
@@ -325,9 +308,7 @@ pub fn build(config: &R2D2Config) -> io::Result<Output> {
                 .args(cargo_args)
                 .current_dir(&dest)
                 .output().unwrap();
-            } else {
-            //TODO: Need to double check that the run command doesn't also rebuild after
-            //post-compilation
+        } else {
             output = Command::new("cargo")
                 .arg("run")
                 .arg("--target-dir")
